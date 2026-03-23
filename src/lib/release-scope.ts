@@ -4,24 +4,34 @@ export function isLiveLimitedRelease(): boolean {
   return RELEASE_SCOPE === 'limited';
 }
 
-const LIMITED_ALLOWED_PREFIXES = [
+/**
+ * Rotas permitidas quando NEXT_PUBLIC_RELEASE_SCOPE=limited (middleware).
+ * Deve estar alinhado com o que o menu / app realmente expõe — senão o usuário cai em /rede-franqueados.
+ */
+export const LIMITED_RELEASE_ALLOWED_PATHS: readonly string[] = [
   '/',
-  '/login',
   '/aceitar-convite',
   '/esqueci-senha',
   '/redefinir-senha',
-  '/api/webhooks/',
+  '/auth',
   '/rede-franqueados',
   '/comunidade',
-  '/painel-novos-negocios',
   '/dashboard-novos-negocios',
+  '/painel-novos-negocios',
+  '/painel-contabilidade',
+  '/painel-credito',
+  '/login',
   '/perfil',
+  '/api',
+  '/_next',
 ] as const;
 
-export function isAllowedInLimitedRelease(pathname: string): boolean {
-  return LIMITED_ALLOWED_PREFIXES.some((prefix) =>
-    prefix.endsWith('/')
-      ? pathname.startsWith(prefix)
-      : pathname === prefix || pathname.startsWith(`${prefix}/`),
+/** Mesma regra do middleware: `/` só a home exata; demais por prefixo. */
+export function isPathAllowedInLimitedRelease(pathname: string): boolean {
+  return LIMITED_RELEASE_ALLOWED_PATHS.some((path) =>
+    path === '/' ? pathname === '/' : pathname.startsWith(path),
   );
 }
+
+/** @deprecated Prefer isPathAllowedInLimitedRelease — nome mantido para compat. */
+export const isAllowedInLimitedRelease = isPathAllowedInLimitedRelease;

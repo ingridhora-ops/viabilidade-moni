@@ -39,7 +39,7 @@ export async function POST(req: Request) {
 
     let profile = await admin.from('profiles').select('id').eq('email', email).maybeSingle();
     if (!profile.data?.id) {
-      await admin.auth.admin.inviteUserByEmail(email, { data: { full_name: '', nome_completo: '', cargo: '', departamento: departamento ?? '' } });
+      await admin.auth.admin.inviteUserByEmail(email, { data: { full_name: '', nome_completo: '', departamento: departamento ?? '' } });
       profile = await admin.from('profiles').select('id').eq('email', email).maybeSingle();
     }
     const profileId = (profile.data as { id?: string } | null)?.id;

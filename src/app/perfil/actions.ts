@@ -37,7 +37,6 @@ export async function atualizarChaveAutentique(
 
 export async function atualizarPerfilBasico(input: {
   nome_completo: string;
-  cargo: string;
   departamento: string;
 }): Promise<{ ok: boolean; error?: string }> {
   const supabase = await createClient();
@@ -47,10 +46,9 @@ export async function atualizarPerfilBasico(input: {
   if (!user) return { ok: false, error: 'Faça login.' };
 
   const nome = input.nome_completo.trim();
-  const cargo = input.cargo.trim();
   const departamento = input.departamento.trim();
-  if (!nome || !cargo || !departamento) {
-    return { ok: false, error: 'Preencha nome, cargo e departamento.' };
+  if (!nome || !departamento) {
+    return { ok: false, error: 'Preencha nome e departamento.' };
   }
 
   const { error } = await supabase
@@ -58,7 +56,6 @@ export async function atualizarPerfilBasico(input: {
     .update({
       nome_completo: nome,
       full_name: nome,
-      cargo,
       departamento,
       updated_at: new Date().toISOString(),
     })

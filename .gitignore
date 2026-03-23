@@ -4,3 +4,9 @@ dist/
 .env
 .env.local
 .env.*.local
+
+# Supabase CLI (cache local; não versionar)
+supabase/.temp/
+
+# Artefacto incremental do TypeScript
+*.tsbuildinfo

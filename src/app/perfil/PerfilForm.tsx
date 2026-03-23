@@ -5,7 +5,6 @@ import { createClient } from '@/lib/supabase/client';
 
 type Props = {
   initialNome: string;
-  initialCargo: string;
   initialDepartamento: string;
   email: string;
   role: string;
@@ -14,14 +13,12 @@ type Props = {
 
 export function PerfilForm({
   initialNome,
-  initialCargo,
   initialDepartamento,
   email,
   role,
   aprovadoEm,
 }: Props) {
   const [nome, setNome] = useState(initialNome);
-  const [cargo, setCargo] = useState(initialCargo);
   const [departamento, setDepartamento] = useState(initialDepartamento);
   const [senha, setSenha] = useState('');
   const [confirmar, setConfirmar] = useState('');
@@ -35,8 +32,8 @@ export function PerfilForm({
     setError('');
     setLoading(true);
     try {
-      if (!nome.trim() || !cargo.trim() || !departamento.trim()) {
-        setError('Preencha nome, cargo e departamento.');
+      if (!nome.trim() || !departamento.trim()) {
+        setError('Preencha nome e departamento.');
         setLoading(false);
         return;
       }
@@ -66,7 +63,6 @@ export function PerfilForm({
         .update({
           nome_completo: nome.trim(),
           full_name: nome.trim(),
-          cargo: cargo.trim(),
           departamento: departamento.trim(),
           updated_at: new Date().toISOString(),
         })
@@ -94,25 +90,14 @@ export function PerfilForm({
 
   return (
     <form onSubmit={onSave} className="mt-6 space-y-4 rounded-lg border border-stone-200 bg-white p-4">
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-        <div>
-          <label className="block text-sm font-medium text-stone-700">Nome completo</label>
-          <input
-            value={nome}
-            onChange={(e) => setNome(e.target.value)}
-            className="mt-1 w-full rounded border border-stone-300 px-3 py-2"
-            required
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-stone-700">Cargo</label>
-          <input
-            value={cargo}
-            onChange={(e) => setCargo(e.target.value)}
-            className="mt-1 w-full rounded border border-stone-300 px-3 py-2"
-            required
-          />
-        </div>
+      <div>
+        <label className="block text-sm font-medium text-stone-700">Nome completo</label>
+        <input
+          value={nome}
+          onChange={(e) => setNome(e.target.value)}
+          className="mt-1 w-full rounded border border-stone-300 px-3 py-2"
+          required
+        />
       </div>
       <div>
         <label className="block text-sm font-medium text-stone-700">Departamento</label>

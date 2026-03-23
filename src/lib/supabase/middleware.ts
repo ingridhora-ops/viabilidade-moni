@@ -2,7 +2,6 @@ import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 import { normalizeAccessRole } from '@/lib/authz';
 import { isAdminOnlyPath, isTeamAllowedPath } from '@/lib/access-matrix';
-import { isAllowedInLimitedRelease, isLiveLimitedRelease } from '@/lib/release-scope';
 
 export async function updateSession(request: NextRequest) {
   const pathname = request.nextUrl.pathname;

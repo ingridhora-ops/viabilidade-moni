@@ -13,11 +13,10 @@ export default async function PerfilPage() {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('full_name, nome_completo, cargo, departamento, email, role, aprovado_em, autentique_api_key')
+    .select('full_name, nome_completo, departamento, email, role, aprovado_em, autentique_api_key')
     .eq('id', user.id)
     .single();
   const fullName = (profile as any)?.nome_completo ?? profile?.full_name ?? user.email ?? '';
-  const cargo = (profile as any)?.cargo ?? '';
   const departamento = (profile as any)?.departamento ?? '';
   const role = (profile?.role as string) ?? 'frank';
   const aprovadoEm = ((profile as any)?.aprovado_em ?? null) as string | null;
@@ -51,7 +50,6 @@ export default async function PerfilPage() {
 
           <PerfilForm
             initialNome={fullName}
-            initialCargo={cargo}
             initialDepartamento={departamento}
             email={user.email ?? ''}
             role={role}

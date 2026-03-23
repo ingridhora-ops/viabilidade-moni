@@ -29,7 +29,15 @@ function chartFontColor() {
   return 'rgba(44,44,42,0.75)';
 }
 
-const NN_COLORS = [PALETTE.amber, PALETTE.darkGreen, PALETTE.petrol, PALETTE.red];
+const NN_BAR_PALETTE = [
+  PALETTE.amber,
+  PALETTE.darkGreen,
+  PALETTE.petrol,
+  PALETTE.red,
+  PALETTE.charcoal,
+  PALETTE.gold,
+  PALETTE.gray,
+];
 const CONTAB_COLORS = [PALETTE.charcoal, PALETTE.darkGreen, PALETTE.amber, PALETTE.petrol, PALETTE.gray];
 const CRED_COLORS = [PALETTE.gold, PALETTE.amber, PALETTE.darkGreen, PALETTE.gray];
 
@@ -213,30 +221,34 @@ export function DashboardNovosNegociosClient() {
       <div className="mb-8 space-y-4">
         <div className="rounded-lg border-[0.5px] border-stone-300 bg-white p-4 shadow-sm">
           {loading || !model ? (
-            <Skeleton className="h-[180px]" />
+            <Skeleton className="h-[320px]" />
           ) : (
             <>
-              <p className="text-sm font-semibold text-stone-800">Kanban Novos Negócios — cards por fase</p>
+              <p className="text-sm font-semibold text-stone-800">Kanban Novos Negócios — cards por etapa</p>
               <p className="text-xs text-stone-500">
-                Total de {fmtInt(model.nnBar.counts.reduce((a, b) => a + b, 0))} referências nas faixas exibidas
+                {fmtInt(model.nnBar.counts.reduce((a, b) => a + b, 0))} cards ativos nas colunas do painel (mesma
+                lógica do Kanban; Crédito Terreno exclui Permuta).
               </p>
-              <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-stone-600">
-                {model.nnBar.labels.map((l, i) => (
-                  <span key={l} className="flex items-center gap-1">
-                    <span className="h-2 w-2 rounded-sm" style={{ backgroundColor: NN_COLORS[i] }} />
-                    {l}
-                  </span>
-                ))}
-              </div>
-              <div className="h-[180px]">
+              <div
+                className="mt-3 w-full"
+                style={{
+                  height: `${Math.min(720, Math.max(220, model.nnBar.labels.length * 26))}px`,
+                }}
+              >
                 <Bar
                   options={{
+                    indexAxis: 'y',
                     responsive: true,
                     maintainAspectRatio: false,
                     plugins: {
                       legend: { display: false },
                       tooltip: {
                         callbacks: {
+                          title(items) {
+                            const i = items[0]?.dataIndex ?? 0;
+                            const key = model.nnBar.keys?.[i];
+                            return key ? `${items[0]?.label ?? ''} (${key})` : String(items[0]?.label ?? '');
+                          },
                           label(ctx) {
                             const v = Number(ctx.raw);
                             const t = model.nnBar.counts.reduce((a, b) => a + b, 0) || 1;
@@ -248,8 +260,14 @@ export function DashboardNovosNegociosClient() {
                       dataLabels: { isDark: false },
                     },
                     scales: {
-                      x: { ticks: { color: chartFontColor(), maxRotation: 45, minRotation: 0 } },
-                      y: { beginAtZero: true, ticks: { color: chartFontColor() } },
+                      x: { beginAtZero: true, ticks: { color: chartFontColor(), precision: 0 } },
+                      y: {
+                        ticks: {
+                          color: chartFontColor(),
+                          autoSkip: false,
+                          font: { size: 10 },
+                        },
+                      },
                     },
                   }}
                   data={{
@@ -257,7 +275,9 @@ export function DashboardNovosNegociosClient() {
                     datasets: [
                       {
                         data: model.nnBar.counts,
-                        backgroundColor: NN_COLORS,
+                        backgroundColor: model.nnBar.labels.map(
+                          (_, i) => NN_BAR_PALETTE[i % NN_BAR_PALETTE.length],
+                        ),
                         borderWidth: 0,
                       },
                     ],

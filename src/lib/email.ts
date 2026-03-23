@@ -135,14 +135,12 @@ export async function sendSignupNotifications(opts: {
   userEmail: string;
   userName: string;
   departamento: string;
-  cargo: string;
   accessRole: AccessRole;
 }): Promise<void> {
   const admins = parseAdminNotifyList();
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
   const nome = opts.userName || '—';
   const dept = opts.departamento || '—';
-  const cargo = opts.cargo || '—';
 
   if (opts.accessRole === 'pending') {
     await sendEmailViaResend({
@@ -163,7 +161,6 @@ export async function sendSignupNotifications(opts: {
     const adminText = [
       `E-mail: ${opts.userEmail}`,
       `Nome: ${nome}`,
-      `Cargo: ${cargo}`,
       `Departamento: ${dept}`,
       `Papel atribuído: ${opts.accessRole}`,
       '',
@@ -173,7 +170,6 @@ export async function sendSignupNotifications(opts: {
       '<ul>' +
       `<li><strong>E-mail:</strong> ${escapeHtml(opts.userEmail)}</li>` +
       `<li><strong>Nome:</strong> ${escapeHtml(nome)}</li>` +
-      `<li><strong>Cargo:</strong> ${escapeHtml(cargo)}</li>` +
       `<li><strong>Departamento:</strong> ${escapeHtml(dept)}</li>` +
       `<li><strong>Papel:</strong> ${escapeHtml(opts.accessRole)}</li>` +
       '</ul>' +

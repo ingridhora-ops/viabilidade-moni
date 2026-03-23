@@ -18,7 +18,7 @@ export async function notifySignupComplete() {
 
     const { data: profile } = await supabase
       .from('profiles')
-      .select('role, nome_completo, full_name, departamento, cargo')
+      .select('role, nome_completo, full_name, departamento')
       .eq('id', user.id)
       .maybeSingle();
 
@@ -31,7 +31,6 @@ export async function notifySignupComplete() {
           '',
       ).trim(),
       departamento: String((profile as { departamento?: string | null } | null)?.departamento ?? '').trim(),
-      cargo: String((profile as { cargo?: string | null } | null)?.cargo ?? '').trim(),
       accessRole,
     });
     return { ok: true as const };

@@ -113,6 +113,8 @@ const PER_PAGE = 15;
 
 type Props = {
   rows: RedeFranqueadoRowDb[];
+  /** Apenas administradores (e perfis equivalentes no authz) podem editar/excluir linhas. */
+  canEditRows?: boolean;
 };
 
 function toInputDate(val: string | null | undefined): string {
@@ -143,7 +145,7 @@ function normalizeFKDisplay(val: string | null | undefined): string {
   return `FK${String(n).padStart(4, '0')}`;
 }
 
-export function TabelaRedeFranqueadosEditavel({ rows }: Props) {
+export function TabelaRedeFranqueadosEditavel({ rows, canEditRows = true }: Props) {
   const router = useRouter();
   const [page, setPage] = useState(1);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -162,6 +164,14 @@ export function TabelaRedeFranqueadosEditavel({ rows }: Props) {
   const safePage = Math.min(Math.max(1, page), totalPages);
   const start = (safePage - 1) * PER_PAGE;
   const pageRows = useMemo(() => rows.slice(start, start + PER_PAGE), [rows, start]);
+
+  useEffect(() => {
+    if (!canEditRows && editingId) {
+      setEditingId(null);
+      setDraft({});
+      setAreaAtuacaoItens([]);
+    }
+  }, [canEditRows, editingId]);
 
   useEffect(() => {
     if (!editingId || !estadoAtuacao) {
@@ -193,6 +203,7 @@ export function TabelaRedeFranqueadosEditavel({ rows }: Props) {
   const keys = useMemo(() => [...REDE_FRANQUEADOS_DB_KEYS], []);
 
   const beginEdit = (r: RedeFranqueadoRowDb) => {
+    if (!canEditRows) return;
     setMsg(null);
     setEditingId(r.id);
     const d: Partial<Record<RedeFranqueadoDbKey, string>> = {};
@@ -217,7 +228,7 @@ export function TabelaRedeFranqueadosEditavel({ rows }: Props) {
   };
 
   const save = async () => {
-    if (!editingId) return;
+    if (!canEditRows || !editingId) return;
     setSaving(true);
     setMsg(null);
 
@@ -242,7 +253,7 @@ export function TabelaRedeFranqueadosEditavel({ rows }: Props) {
   };
 
   const excluir = async (id: string) => {
-    if (saving) return;
+    if (!canEditRows || saving) return;
     setMsg(null);
     const ok = window.confirm('Excluir esta linha da Rede de Franqueados? Essa ação não pode ser desfeita.');
     if (!ok) return;
@@ -277,7 +288,9 @@ export function TabelaRedeFranqueadosEditavel({ rows }: Props) {
         <table className="w-full min-w-[1700px] border-collapse text-left text-sm">
           <thead>
             <tr className="border-b border-stone-200 bg-stone-50">
-              <th className="whitespace-nowrap px-3 py-2 font-semibold text-stone-700">Ações</th>
+              {canEditRows && (
+                <th className="whitespace-nowrap px-3 py-2 font-semibold text-stone-700">Ações</th>
+              )}
               {headers.map((h, i) => (
                 <th key={i} className="whitespace-nowrap px-3 py-2 font-semibold text-stone-700">
                   {h}
@@ -290,52 +303,54 @@ export function TabelaRedeFranqueadosEditavel({ rows }: Props) {
               const isEditing = editingId === r.id;
               return (
                 <tr key={r.id} className="border-b border-stone-100 align-top hover:bg-stone-50/80">
-                  <td className="whitespace-nowrap px-3 py-2">
-                    {!isEditing ? (
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => beginEdit(r)}
-                          className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50"
-                        >
-                          Editar
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void excluir(r.id)}
-                          className="rounded-lg border border-red-200 bg-white px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50"
-                        >
-                          Excluir
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={save}
-                          disabled={saving}
-                          className="rounded-lg bg-moni-primary px-3 py-1.5 text-sm font-medium text-white hover:bg-moni-secondary disabled:opacity-50"
-                        >
-                          {saving ? (
-                            <>
-                              <Loader2 className="mr-1 inline h-4 w-4 animate-spin" />
-                              Salvando…
-                            </>
-                          ) : (
-                            'Salvar'
-                          )}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={cancelEdit}
-                          disabled={saving}
-                          className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-50"
-                        >
-                          Cancelar
-                        </button>
-                      </div>
-                    )}
-                  </td>
+                  {canEditRows && (
+                    <td className="whitespace-nowrap px-3 py-2">
+                      {!isEditing ? (
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => beginEdit(r)}
+                            className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50"
+                          >
+                            Editar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void excluir(r.id)}
+                            className="rounded-lg border border-red-200 bg-white px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50"
+                          >
+                            Excluir
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={save}
+                            disabled={saving}
+                            className="rounded-lg bg-moni-primary px-3 py-1.5 text-sm font-medium text-white hover:bg-moni-secondary disabled:opacity-50"
+                          >
+                            {saving ? (
+                              <>
+                                <Loader2 className="mr-1 inline h-4 w-4 animate-spin" />
+                                Salvando…
+                              </>
+                            ) : (
+                              'Salvar'
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={cancelEdit}
+                            disabled={saving}
+                            className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-50"
+                          >
+                            Cancelar
+                          </button>
+                        </div>
+                      )}
+                    </td>
+                  )}
 
                   {keys.map((k) => {
                     const current = (r[k] ?? '') as string;

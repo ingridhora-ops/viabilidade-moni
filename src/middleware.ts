@@ -1,32 +1,13 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { updateSession } from '@/lib/supabase/middleware';
-
-const LIMITED_ALLOWED = [
-  '/',
-  '/aceitar-convite',
-  '/esqueci-senha',
-  '/redefinir-senha',
-  '/auth',
-  '/rede-franqueados',
-  '/comunidade',
-  '/dashboard-novos-negocios',
-  '/painel-novos-negocios',
-  '/login',
-  '/perfil',
-  '/api',
-  '/_next',
-] as const;
+import { isLiveLimitedRelease, isPathAllowedInLimitedRelease } from '@/lib/release-scope';
 
 export async function middleware(request: NextRequest) {
   const response = await updateSession(request);
 
-  const isLimited = process.env.NEXT_PUBLIC_RELEASE_SCOPE === 'limited';
-  if (isLimited) {
+  if (isLiveLimitedRelease()) {
     const pathname = request.nextUrl.pathname;
-    const allowed = LIMITED_ALLOWED.some((path) =>
-      path === '/' ? pathname === '/' : pathname.startsWith(path),
-    );
-    if (!allowed) {
+    if (!isPathAllowedInLimitedRelease(pathname)) {
       const redirect = NextResponse.redirect(new URL('/rede-franqueados', request.url));
       response.cookies.getAll().forEach((cookie) => {
         redirect.cookies.set(cookie.name, cookie.value);

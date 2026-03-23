@@ -1,7 +1,8 @@
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
-import { fetchRedeFranqueados, fetchRedeFranqueadosRows } from '@/lib/rede-franqueados';
+import { isAdminRole } from '@/lib/authz';
+import { fetchRedeFranqueadosRows } from '@/lib/rede-franqueados';
 import { TabelaRedeFranqueadosEditavel } from '@/components/TabelaRedeFranqueadosEditavel';
 import { contarLinhasSemCard } from './actions';
 import { CriarCardsDesdeRedeButton } from './CriarCardsDesdeRedeButton';
@@ -23,12 +24,11 @@ export default async function RedeFranqueadosPage() {
     .eq('id', user.id)
     .single();
   const role = (profile?.role as string) ?? 'frank';
-  if (role !== 'admin') redirect('/comunidade');
+  const canManage = isAdminRole(role);
 
-  const [data, rows, countResult] = await Promise.all([
-    fetchRedeFranqueados(supabase),
+  const [rows, countResult] = await Promise.all([
     fetchRedeFranqueadosRows(supabase),
-    contarLinhasSemCard(),
+    canManage ? contarLinhasSemCard() : Promise.resolve({ ok: true as const, total: 0 }),
   ]);
   const linhasSemCard = countResult.ok ? countResult.total : 0;
 
@@ -59,18 +59,24 @@ export default async function RedeFranqueadosPage() {
           </div>
         )}
 
-        <div className="mb-6 space-y-6">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <AdicionarRedeECardButton />
+        {canManage && (
+          <div className="mb-6 space-y-6">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <AdicionarRedeECardButton />
+            </div>
+            <ImportarRedeCSVButton />
+            <CriarCardsDesdeRedeButton linhasSemCard={linhasSemCard} />
           </div>
-          <ImportarRedeCSVButton />
-          <CriarCardsDesdeRedeButton linhasSemCard={linhasSemCard} />
-        </div>
+        )}
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-lg font-semibold text-stone-800">Tabela de Rede de Franqueados</h2>
           {rows && <ExportarRedeCSVButton rows={rows} />}
         </div>
-        {rows ? <TabelaRedeFranqueadosEditavel rows={rows} /> : <p className="text-sm text-red-600">Erro ao carregar a tabela.</p>}
+        {rows ? (
+          <TabelaRedeFranqueadosEditavel rows={rows} canEditRows={canManage} />
+        ) : (
+          <p className="text-sm text-red-600">Erro ao carregar a tabela.</p>
+        )}
       </main>
     </div>
   );

@@ -1,4 +1,4 @@
-import type { PainelColumnKey } from '@/app/steps-viabilidade/painelColumns';
+import { PAINEL_COLUMNS, type PainelColumnKey } from '@/app/steps-viabilidade/painelColumns';
 import {
   ETAPAS_KANBAN_NN,
   isEtapaKanbanNovosNegocios,
@@ -134,9 +134,21 @@ export function buildDashboardModel(raw: Raw, options?: BuildDashboardOptions) {
     else nnOp += 1;
   }
 
+  /** Uma barra por coluna do Kanban Novos Negócios (mesma ordem do painel), só cards ativos. */
+  const nnKanbanCols = PAINEL_COLUMNS.filter(
+    (c) => c.key !== 'step_1' && isEtapaKanbanNovosNegocios(c.key),
+  );
+  const nnBarCounts = nnKanbanCols.map((col) => {
+    let list = ativos.filter((p) => (p.etapa_painel ?? '') === col.key);
+    if (col.key === 'credito_terreno') {
+      list = list.filter((p) => (p.tipo_aquisicao_terreno ?? '') !== 'Permuta');
+    }
+    return list.length;
+  });
   const nnBar = {
-    labels: ['Pré comitê', 'Aprovado comitê', 'Operação em andamento', 'Caiu'],
-    counts: [nnPre, nnAprov, nnOp, nnCaiu],
+    labels: nnKanbanCols.map((c) => c.title),
+    counts: nnBarCounts,
+    keys: nnKanbanCols.map((c) => c.key),
   };
 
   const faseContabLabels: Record<string, string> = {
