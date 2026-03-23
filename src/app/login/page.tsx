@@ -19,6 +19,39 @@ function supabaseNetworkErrorHint(message: string | undefined): string {
   return msg;
 }
 
+const ALLOWED_EMAIL_DOMAIN = process.env.NEXT_PUBLIC_ALLOWED_EMAIL_DOMAIN ?? 'moni.casa';
+
+/** Mensagens conhecidas do Auth (Supabase / GoTrue); ajuste se o texto do servidor mudar. */
+function mapKnownSignupAuthMessages(raw: string): string | null {
+  const m = (raw ?? '').trim();
+  const lower = m.toLowerCase();
+
+  if (lower.includes('email not confirmed')) {
+    return 'Verifique seu e-mail para confirmar o cadastro.';
+  }
+  if (
+    lower.includes('user already registered') ||
+    lower.includes('already registered') ||
+    lower.includes('email address already') ||
+    lower.includes('already been registered')
+  ) {
+    return 'Este e-mail já está cadastrado. Use a opção Entrar.';
+  }
+  if (lower.includes('email domain not allowed') || (lower.includes('domain') && lower.includes('not allowed'))) {
+    return `Use um e-mail @${ALLOWED_EMAIL_DOMAIN} para se cadastrar.`;
+  }
+  if (lower.includes('password should be at least') || /password.*at least\s*\d+/i.test(m)) {
+    return 'A senha deve ter no mínimo 8 caracteres.';
+  }
+  return null;
+}
+
+function signupErrorUserMessage(raw: string | undefined): string {
+  const mapped = mapKnownSignupAuthMessages(raw ?? '');
+  if (mapped) return mapped;
+  return supabaseNetworkErrorHint(raw);
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -60,10 +93,9 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
     try {
-      const allowedDomain = process.env.NEXT_PUBLIC_ALLOWED_EMAIL_DOMAIN ?? 'moni.casa';
       const emailDomain = email.trim().toLowerCase().split('@')[1] ?? '';
-      if (emailDomain !== allowedDomain) {
-        setError(`Use um e-mail @${allowedDomain}.`);
+      if (emailDomain !== ALLOWED_EMAIL_DOMAIN) {
+        setError(`Use um e-mail @${ALLOWED_EMAIL_DOMAIN}.`);
         setLoading(false);
         return;
       }
@@ -117,11 +149,10 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
     try {
-      const allowedDomain = process.env.NEXT_PUBLIC_ALLOWED_EMAIL_DOMAIN ?? 'moni.casa';
       const emailLower = email.trim().toLowerCase();
       const emailDomain = emailLower.split('@')[1] ?? '';
-      if (emailDomain !== allowedDomain) {
-        setError(`Use um e-mail @${allowedDomain}.`);
+      if (emailDomain !== ALLOWED_EMAIL_DOMAIN) {
+        setError(`Use um e-mail @${ALLOWED_EMAIL_DOMAIN}.`);
         setLoading(false);
         return;
       }
@@ -142,7 +173,8 @@ export default function LoginPage() {
         options: { data: { full_name: fullName, nome_completo: fullName, departamento } },
       });
       if (err) {
-        setError(supabaseNetworkErrorHint(err.message));
+        console.error('[login/signup] signUp error (mensagem Supabase):', err.message, err);
+        setError(signupErrorUserMessage(err.message));
         setLoading(false);
         return;
       }
@@ -176,8 +208,15 @@ export default function LoginPage() {
         router.push(role === 'admin' ? '/dashboard-novos-negocios' : '/rede-franqueados');
       }
       router.refresh();
-    } catch {
-      setError('Erro ao cadastrar. Tente de novo.');
+    } catch (unknownErr) {
+      const raw =
+        unknownErr instanceof Error
+          ? unknownErr.message
+          : typeof unknownErr === 'string'
+            ? unknownErr
+            : String(unknownErr);
+      console.error('[login/signup] cadastro exceção (mensagem bruta):', raw, unknownErr);
+      setError(signupErrorUserMessage(raw) || raw || 'Erro ao cadastrar.');
     } finally {
       setLoading(false);
     }
@@ -267,8 +306,7 @@ export default function LoginPage() {
               <>
                 <h1 className="text-xl font-bold text-moni-dark">Cadastrar</h1>
                 <p className="mt-2 text-sm text-stone-600">
-                  Crie sua conta com e-mail @
-                  {process.env.NEXT_PUBLIC_ALLOWED_EMAIL_DOMAIN ?? 'moni.casa'}.
+                  Crie sua conta com e-mail @{ALLOWED_EMAIL_DOMAIN}.
                 </p>
                 <form onSubmit={handleSignup} className="mt-6 space-y-4">
                   <div>
