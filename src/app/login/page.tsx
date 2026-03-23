@@ -21,10 +21,25 @@ function supabaseNetworkErrorHint(message: string | undefined): string {
 
 const ALLOWED_EMAIL_DOMAIN = process.env.NEXT_PUBLIC_ALLOWED_EMAIL_DOMAIN ?? 'moni.casa';
 
+/** GoTrue: "For security purposes, you can only request this after N seconds." */
+function mapAuthRateLimitMessage(raw: string): string | null {
+  const m = (raw ?? '').trim();
+  const lower = m.toLowerCase();
+  if (!lower.includes('for security purposes') || !lower.includes('only request')) return null;
+  const match = m.match(/after\s+(\d+)\s*seconds?/i);
+  if (match) {
+    return `Por segurança, aguarde ${match[1]} segundos antes de tentar novamente.`;
+  }
+  return 'Por segurança, aguarde alguns segundos antes de tentar novamente.';
+}
+
 /** Mensagens conhecidas do Auth (Supabase / GoTrue); ajuste se o texto do servidor mudar. */
 function mapKnownSignupAuthMessages(raw: string): string | null {
   const m = (raw ?? '').trim();
   const lower = m.toLowerCase();
+
+  const rate = mapAuthRateLimitMessage(m);
+  if (rate) return rate;
 
   if (lower.includes('email not confirmed')) {
     return 'Verifique seu e-mail para confirmar o cadastro.';
@@ -49,6 +64,18 @@ function mapKnownSignupAuthMessages(raw: string): string | null {
 function signupErrorUserMessage(raw: string | undefined): string {
   const mapped = mapKnownSignupAuthMessages(raw ?? '');
   if (mapped) return mapped;
+  return supabaseNetworkErrorHint(raw);
+}
+
+/** Erros de signIn (Entrar) — texto em português + orientação. */
+function mapLoginAuthErrorMessage(raw: string | undefined): string {
+  const m = (raw ?? '').trim();
+  const lower = m.toLowerCase();
+  const rate = mapAuthRateLimitMessage(m);
+  if (rate) return rate;
+  if (lower.includes('email not confirmed')) {
+    return 'O Supabase ainda não tem este e-mail como confirmado. Abra o link do e-mail de cadastro ou peça a um administrador para confirmar o utilizador em Supabase → Authentication → Users. Se já confirmou antes, confira se o site usa o mesmo projeto Supabase (produção vs desenvolvimento).';
+  }
   return supabaseNetworkErrorHint(raw);
 }
 
@@ -105,7 +132,7 @@ export default function LoginPage() {
         setError(
           err.message === 'Invalid login credentials'
             ? 'E-mail ou senha incorretos.'
-            : supabaseNetworkErrorHint(err.message),
+            : mapLoginAuthErrorMessage(err.message),
         );
         setLoading(false);
         return;
