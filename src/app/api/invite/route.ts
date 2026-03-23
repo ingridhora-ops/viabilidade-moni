@@ -10,10 +10,15 @@ function getAllowedDomain() {
   return (process.env.ALLOWED_EMAIL_DOMAIN ?? 'moni.casa').toLowerCase();
 }
 
-/** Case-insensitive match; evita falha quando o e-mail no banco não está em minúsculas. */
+/**
+ * `maybeSingle()` falha se houver mais de uma linha; emails duplicados em profiles
+ * faziam a query devolver erro e "sumir" o perfil.
+ */
 async function findProfileIdByEmail(admin: SupabaseClient, email: string): Promise<string | null> {
-  const { data } = await admin.from('profiles').select('id').ilike('email', email).maybeSingle();
-  return (data as { id?: string } | null)?.id ?? null;
+  const { data, error } = await admin.from('profiles').select('id').ilike('email', email).limit(1);
+  if (error) return null;
+  const row = data?.[0] as { id?: string } | undefined;
+  return row?.id ?? null;
 }
 
 async function findProfileIdByUserId(admin: SupabaseClient, userId: string): Promise<string | null> {
@@ -21,31 +26,37 @@ async function findProfileIdByUserId(admin: SupabaseClient, userId: string): Pro
   return (data as { id?: string } | null)?.id ?? null;
 }
 
-/** Trigger handle_new_user pode atrasar alguns ms. */
 async function waitForProfileByUserId(admin: SupabaseClient, userId: string): Promise<string | null> {
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < 12; i++) {
     const id = await findProfileIdByUserId(admin, userId);
     if (id) return id;
-    await new Promise((r) => setTimeout(r, 200));
+    await new Promise((r) => setTimeout(r, 250));
   }
   return null;
 }
 
-async function findAuthUserIdByEmail(admin: SupabaseClient, email: string): Promise<string | null> {
-  const listUsers = admin.auth.admin.listUsers.bind(admin.auth.admin) as (args: {
-    page?: number;
-    perPage?: number;
-  }) => Promise<{
-    data?: { users?: Array<{ id: string; email?: string | null }> };
-    error?: { message?: string } | null;
-  }>;
+/** GoTrue: GET /auth/v1/admin/users?page=&per_page= — mais fiável que o shape do SDK em alguns deploys. */
+async function findAuthUserIdByEmailHttp(email: string): Promise<string | null> {
+  const base = process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/$/, '');
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!base || !key) return null;
+
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${key}`,
+    apikey: key,
+  };
 
   let page = 1;
   const perPage = 1000;
-  for (let p = 0; p < 50; p++) {
-    const { data, error } = await listUsers({ page, perPage });
-    if (error) break;
-    const users = data?.users ?? [];
+  for (let i = 0; i < 100; i++) {
+    const url = `${base}/auth/v1/admin/users?page=${page}&per_page=${perPage}`;
+    const res = await fetch(url, { headers, cache: 'no-store' });
+    if (!res.ok) return null;
+    const json = (await res.json()) as
+      | { users?: Array<{ id: string; email?: string | null }> }
+      | Array<{ id: string; email?: string | null }>;
+
+    const users = Array.isArray(json) ? json : json.users ?? [];
     const hit = users.find((u) => (u.email ?? '').toLowerCase() === email);
     if (hit) return hit.id;
     if (users.length < perPage) break;
@@ -54,14 +65,27 @@ async function findAuthUserIdByEmail(admin: SupabaseClient, email: string): Prom
   return null;
 }
 
-function isUserAlreadyRegisteredError(err: { message?: string; status?: number } | null | undefined): boolean {
-  const m = (err?.message ?? '').toLowerCase();
-  return (
-    m.includes('already') ||
-    m.includes('registered') ||
-    m.includes('exists') ||
-    err?.status === 422
-  );
+async function findAuthUserIdByEmailSdk(admin: SupabaseClient, email: string): Promise<string | null> {
+  let page = 1;
+  const perPage = 1000;
+  for (let p = 0; p < 50; p++) {
+    const { data, error } = await admin.auth.admin.listUsers({ page, perPage });
+    if (error) break;
+    const users = (data?.users ?? []) as Array<{ id: string; email?: string | null }>;
+    const hit = users.find((u) => (u.email ?? '').toLowerCase() === email);
+    if (hit) return hit.id;
+    if (users.length < perPage) break;
+    page += 1;
+  }
+  return null;
+}
+
+function extractInviteUserId(invData: unknown): string | null {
+  if (!invData || typeof invData !== 'object') return null;
+  const o = invData as { user?: { id?: string }; id?: string };
+  if (o.user?.id) return o.user.id;
+  if (typeof o.id === 'string') return o.id;
+  return null;
 }
 
 export async function POST(req: Request) {
@@ -99,22 +123,22 @@ export async function POST(req: Request) {
         data: { full_name: '', nome_completo: '', departamento: departamento ?? '' },
       });
 
-      if (!invErr && invData?.user?.id) {
+      const invUserId = extractInviteUserId(invData);
+
+      if (!invErr && invUserId) {
         profileId =
-          (await waitForProfileByUserId(admin, invData.user.id)) ?? (await findProfileIdByUserId(admin, invData.user.id));
+          (await waitForProfileByUserId(admin, invUserId)) ?? (await findProfileIdByUserId(admin, invUserId));
       }
 
       if (!profileId) {
-        if (invErr && !isUserAlreadyRegisteredError(invErr)) {
-          return NextResponse.json({ error: invErr.message ?? 'Falha ao convidar no Auth.' }, { status: 500 });
-        }
+        const authUserId =
+          invUserId ?? (await findAuthUserIdByEmailHttp(email)) ?? (await findAuthUserIdByEmailSdk(admin, email));
 
-        const authUserId = invData?.user?.id ?? (await findAuthUserIdByEmail(admin, email));
         if (!authUserId) {
+          const hint = invErr?.message ? ` Detalhe: ${invErr.message}` : '';
           return NextResponse.json(
             {
-              error:
-                'Não foi encontrado usuário no Auth para este e-mail. Verifique no Supabase (Authentication → Users) ou tente outro e-mail.',
+              error: `Não foi encontrado usuário no Auth para este e-mail.${hint} Confira em Supabase → Authentication → Users.`,
             },
             { status: 500 },
           );
@@ -143,7 +167,13 @@ export async function POST(req: Request) {
     }
 
     if (!profileId) {
-      return NextResponse.json({ error: 'Não foi possível criar/obter profile para este e-mail.' }, { status: 500 });
+      return NextResponse.json(
+        {
+          error:
+            'Não foi possível associar este e-mail a um perfil. Confira se o usuário existe em Authentication e se SUPABASE_SERVICE_ROLE_KEY está configurada na Vercel.',
+        },
+        { status: 500 },
+      );
     }
 
     const { error: upErr } = await admin
