@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { Bell, ChevronDown, ChevronRight, User } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import { isLiveLimitedRelease } from '@/lib/release-scope';
 
 type PortalSidebarProps = {
   user: { id: string; email?: string; full_name?: string | null } | null;
@@ -88,6 +89,7 @@ export function PortalSidebar({ user, userRole }: PortalSidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const isAdmin = userRole === 'admin' || userRole === 'consultor' || userRole === 'supervisor';
+  const limitedRelease = isLiveLimitedRelease();
   const [perfilOpen, setPerfilOpen] = useState(() => (pathname ?? '') === '/perfil');
   const [redeFranqueadosOpen, setRedeFranqueadosOpen] = useState(() => isRedeFranqueadosActive(pathname ?? ''));
   const [catalogoOpen, setCatalogoOpen] = useState(() => isCatalogoActive(pathname ?? ''));
@@ -260,13 +262,14 @@ export function PortalSidebar({ user, userRole }: PortalSidebarProps) {
           (href) => pathname === href || (pathname?.startsWith(href + '/') ?? false),
         )}
 
-        {isAdmin && (
+        {!limitedRelease && isAdmin && (
           <Link href="/admin/usuarios" className={linkClassPrincipal(pathname.startsWith('/admin/usuarios'))}>
             Gerenciar Usuários
           </Link>
         )}
 
-        {isAdmin &&
+        {!limitedRelease &&
+          isAdmin &&
           renderMacro(
             'catalogo',
             'Catálogo de Produtos Moní',
@@ -277,7 +280,8 @@ export function PortalSidebar({ user, userRole }: PortalSidebarProps) {
             (href) => pathname?.startsWith(href) ?? false,
           )}
 
-        {isAdmin &&
+        {!limitedRelease &&
+          isAdmin &&
           renderMacro(
             'redeContatos',
             'Rede de contatos',
@@ -288,7 +292,8 @@ export function PortalSidebar({ user, userRole }: PortalSidebarProps) {
             (href) => pathname === href,
           )}
 
-        {isAdmin &&
+        {!limitedRelease &&
+          isAdmin &&
           renderMacro(
             'steps',
             'Steps Viabilidade',
@@ -304,7 +309,8 @@ export function PortalSidebar({ user, userRole }: PortalSidebarProps) {
             },
           )}
 
-        {isAdmin &&
+        {!limitedRelease &&
+          isAdmin &&
           renderMacro(
             'acoplamento',
             'Acoplamento + PL',
@@ -315,7 +321,7 @@ export function PortalSidebar({ user, userRole }: PortalSidebarProps) {
             (href) => (pathname === href || (href !== '/acoplamento-pl' && pathname?.startsWith(href))) ?? false,
           )}
 
-        {isAdmin && (
+        {!limitedRelease && isAdmin && (
           <Link
             href="/sirene"
             className={
