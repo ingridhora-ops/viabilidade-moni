@@ -11,6 +11,14 @@ import { notifySignupComplete } from './actions';
 
 type TabKey = 'entrar' | 'cadastro';
 
+function supabaseNetworkErrorHint(message: string | undefined): string {
+  const msg = message ?? '';
+  if (msg === 'Failed to fetch' || msg === 'NetworkError when attempting to fetch resource.') {
+    return `${msg} — Não foi possível conectar ao servidor. Confira NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY, se o projeto Supabase não está pausado e se firewall ou VPN não bloqueiam.`;
+  }
+  return msg;
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -26,7 +34,6 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
 
   const [fullName, setFullName] = useState('');
-  const [cargo, setCargo] = useState('');
   const [departamento, setDepartamento] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
@@ -64,7 +71,9 @@ export default function LoginPage() {
       const { error: err } = await supabase.auth.signInWithPassword({ email, password });
       if (err) {
         setError(
-          err.message === 'Invalid login credentials' ? 'E-mail ou senha incorretos.' : err.message,
+          err.message === 'Invalid login credentials'
+            ? 'E-mail ou senha incorretos.'
+            : supabaseNetworkErrorHint(err.message),
         );
         setLoading(false);
         return;
@@ -130,10 +139,10 @@ export default function LoginPage() {
       const { error: err } = await supabase.auth.signUp({
         email: emailLower,
         password,
-        options: { data: { full_name: fullName, nome_completo: fullName, cargo, departamento } },
+        options: { data: { full_name: fullName, nome_completo: fullName, departamento } },
       });
       if (err) {
-        setError(err.message);
+        setError(supabaseNetworkErrorHint(err.message));
         setLoading(false);
         return;
       }
@@ -150,7 +159,6 @@ export default function LoginPage() {
             role,
             full_name: fullName,
             nome_completo: fullName,
-            cargo: cargo.trim(),
             departamento: dept,
             // Sem seed na lista → pending (sem aprovação); com seed → já liberado
             aprovado_em: seeded ? new Date().toISOString() : null,
@@ -287,19 +295,6 @@ export default function LoginPage() {
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       placeholder="seu@email.com"
-                      className="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2 focus:border-moni-accent focus:outline-none focus:ring-1 focus:ring-moni-accent"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="cargo" className="block text-sm font-medium text-stone-700">
-                      Cargo
-                    </label>
-                    <input
-                      id="cargo"
-                      type="text"
-                      value={cargo}
-                      onChange={(e) => setCargo(e.target.value)}
                       className="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2 focus:border-moni-accent focus:outline-none focus:ring-1 focus:ring-moni-accent"
                       required
                     />

@@ -55,6 +55,8 @@ const ACOPLAMENTO_SUBITENS: NavItem[] = [
 const PAINEL_NOVOS_NEGOCIOS_SUBITENS: NavItem[] = [
   { href: '/dashboard-novos-negocios', label: 'Dashboard Novos Negócios' },
   { href: '/painel-novos-negocios', label: 'Portfolio + Operações' },
+];
+const PAINEL_NOVOS_NEGOCIOS_TAREFAS: NavItem[] = [
   { href: '/painel-novos-negocios/tarefas', label: 'Painel de Tarefas' },
 ];
 const PAINEL_NOVOS_NEGOCIOS_ADMIN_SUBITENS: NavItem[] = [
@@ -257,8 +259,12 @@ export function PortalSidebar({ user, userRole }: PortalSidebarProps) {
           painelNovosNegociosOpen,
           setPainelNovosNegociosOpen,
           isAdmin
-            ? [...PAINEL_NOVOS_NEGOCIOS_SUBITENS, ...PAINEL_NOVOS_NEGOCIOS_ADMIN_SUBITENS]
-            : PAINEL_NOVOS_NEGOCIOS_SUBITENS,
+            ? [
+                ...PAINEL_NOVOS_NEGOCIOS_SUBITENS,
+                ...PAINEL_NOVOS_NEGOCIOS_ADMIN_SUBITENS,
+                ...PAINEL_NOVOS_NEGOCIOS_TAREFAS,
+              ]
+            : [...PAINEL_NOVOS_NEGOCIOS_SUBITENS, ...PAINEL_NOVOS_NEGOCIOS_TAREFAS],
           (href) => pathname === href || (pathname?.startsWith(href + '/') ?? false),
         )}
 

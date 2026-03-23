@@ -1,8 +1,21 @@
--- Apagar todos os registros da tabela rede_franqueados.
--- Desvincula referências em processo_step_one para permitir o TRUNCATE; depois esvazia a tabela.
+-- Esvaziar rede_franqueados (ex.: dados de seed).
+-- Evita TRUNCATE, que falha quando há FKs ativas.
+-- Primeiro zera as colunas FK que apontam para public.rede_franqueados, depois faz DELETE.
 
-UPDATE public.processo_step_one
-SET origem_rede_franqueados_id = NULL
-WHERE origem_rede_franqueados_id IS NOT NULL;
+DO $$
+DECLARE
+  r RECORD;
+BEGIN
+  FOR r IN
+    SELECT c.conrelid::regclass AS tbl, a.attname AS col
+    FROM pg_constraint c
+    JOIN LATERAL unnest(c.conkey) AS u(attnum) ON true
+    JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = u.attnum AND NOT a.attisdropped
+    WHERE c.confrelid = 'public.rede_franqueados'::regclass
+      AND c.contype = 'f'
+  LOOP
+    EXECUTE format('UPDATE %s SET %I = NULL WHERE %I IS NOT NULL', r.tbl, r.col, r.col);
+  END LOOP;
+END $$;
 
-TRUNCATE TABLE public.rede_franqueados RESTART IDENTITY;
+DELETE FROM public.rede_franqueados;

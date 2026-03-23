@@ -929,6 +929,22 @@ export async function updateStep1AreaChecklistAnexo(
   return { ok: true };
 }
 
+/** Alinhado a PainelCard: não listar tarefas de cards cancelados ou removidos. */
+function isProcessoChecklistPainelExcluido(p: {
+  status?: string | null;
+  cancelado_em?: string | null;
+  removido_em?: string | null;
+} | undefined): boolean {
+  if (!p) return true;
+  const st = String(p.status ?? '').toLowerCase();
+  return (
+    st === 'cancelado' ||
+    Boolean(p.cancelado_em) ||
+    st === 'removido' ||
+    Boolean(p.removido_em)
+  );
+}
+
 /** Painel de Tarefas: atividades do checklist do card (todas as etapas/cards do usuário). */
 export async function getAtividadesChecklistPainel(): Promise<
   | {
@@ -994,18 +1010,49 @@ export async function getAtividadesChecklistPainel(): Promise<
     }
   }
 
-  const processoIds = [...new Set(checklistRows.map((r) => r.processo_id).filter(Boolean))] as string[];
-  const { data: processos } = processoIds.length
-    ? await supabase
-        .from('processo_step_one')
-        .select('id, cidade, estado, numero_franquia, nome_franqueado, nome_condominio')
-        .in('id', processoIds)
-    : { data: [] as any[] };
+  /** Checklist grava `processo_id` = base do histórico; cancelar/remover atualiza a linha do card atual (filho). */
+  const baseIds = [...new Set(checklistRows.map((r) => r.processo_id).filter(Boolean))] as string[];
+  let roots: any[] = [];
+  let children: any[] = [];
+  if (baseIds.length > 0) {
+    const sel =
+      'id, historico_base_id, cidade, estado, numero_franquia, nome_franqueado, nome_condominio, status, cancelado_em, removido_em';
+    const { data: byId } = await supabase.from('processo_step_one').select(sel).in('id', baseIds);
+    const { data: byBase } = await supabase.from('processo_step_one').select(sel).in('historico_base_id', baseIds);
+    roots = byId ?? [];
+    children = byBase ?? [];
+  }
 
-  const procMap = new Map((processos ?? []).map((p: any) => [p.id, p]));
+  const lineageByRowId = new Map<string, any>();
+  for (const r of [...roots, ...children]) {
+    if (r?.id) lineageByRowId.set(String(r.id), r);
+  }
+
+  const excludedBases = new Set<string>();
+  for (const B of baseIds) {
+    for (const r of lineageByRowId.values()) {
+      const belongs = String(r.id) === B || String(r.historico_base_id ?? '') === B;
+      if (belongs && isProcessoChecklistPainelExcluido(r)) {
+        excludedBases.add(B);
+        break;
+      }
+    }
+  }
+
+  const procMap = new Map<string, any>();
+  for (const B of baseIds) {
+    if (excludedBases.has(B)) continue;
+    const root = roots.find((p: any) => String(p.id) === B);
+    if (root) procMap.set(B, root);
+    else {
+      const anyRow = children.find((p: any) => String(p.historico_base_id) === B);
+      if (anyRow) procMap.set(B, anyRow);
+    }
+  }
 
   const tarefas = (checklistRows ?? [])
     .filter((r: any) => !isChecklistAnexosEstrutural(r.etapa_painel, r.titulo))
+    .filter((r: any) => !excludedBases.has(String(r.processo_id)))
     .map((r: any) => {
     const p = procMap.get(r.processo_id);
     return {
