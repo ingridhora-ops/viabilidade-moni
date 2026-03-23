@@ -266,14 +266,31 @@ export async function POST(req: Request) {
 
     const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
     const inviteLink = `${appUrl}/aceitar-convite?token=${encodeURIComponent(token)}`;
-    await sendEmailViaResend({
+    const mail = await sendEmailViaResend({
       to: email,
       subject: 'Convite de acesso — Plataforma Moní',
       text: `Você recebeu um convite de acesso.\n\nAcesse: ${inviteLink}`,
       html: `<p>Você recebeu um convite de acesso.</p><p><a href="${inviteLink}">Aceitar convite</a></p>`,
     });
+    if (!mail.ok) {
+      return NextResponse.json({ error: mail.error }, { status: 500 });
+    }
 
-    return NextResponse.json({ ok: true, token, inviteLink });
+    const isProd = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
+    return NextResponse.json({
+      ok: true,
+      token,
+      inviteLink,
+      resendEmailId: mail.resendEmailId,
+      emailSkipped: mail.skipped === true,
+      ...(mail.skipped
+        ? {
+            warning: isProd
+              ? 'RESEND_API_KEY não configurada — o e-mail não foi enviado. Copie o link abaixo e envie manualmente ao convidado, ou configure a chave na Vercel.'
+              : 'Sem RESEND_API_KEY — e-mail não enviado (normal em dev). Use o link abaixo para testar.',
+          }
+        : {}),
+    });
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Erro interno';
     return NextResponse.json({ error: msg }, { status: 500 });

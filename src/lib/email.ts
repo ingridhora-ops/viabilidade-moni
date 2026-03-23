@@ -34,20 +34,27 @@ function parseAdminNotifyList(): string[] {
   return ['ingrid.hora@moni.casa'];
 }
 
+export type SendEmailResult =
+  | { ok: true; resendEmailId?: string; skipped?: boolean }
+  | { ok: false; error: string };
+
+/**
+ * Envia e-mail via Resend. Em dev sem RESEND_API_KEY devolve ok + skipped (não quebra fluxos locais).
+ * Em produção sem chave também skipped — o chamador pode avisar o admin.
+ */
 export async function sendEmailViaResend(input: {
   to: string | string[];
   subject: string;
   text: string;
   html: string;
   attachments?: ResendAttachment[];
-}): Promise<{ ok: true } | { ok: false; error: string }> {
+}): Promise<SendEmailResult> {
   const recipients = (Array.isArray(input.to) ? input.to : [input.to])
     .map((e) => e.trim())
     .filter(Boolean);
   if (!recipients.length) return { ok: false, error: 'E-mail do destinatário não informado.' };
   if (!RESEND_API_KEY) {
-    // Sem chave: não envia, não falha (evita quebrar o fluxo em dev)
-    return { ok: true };
+    return { ok: true, skipped: true };
   }
 
   try {
@@ -71,7 +78,8 @@ export async function sendEmailViaResend(input: {
       const body = await res.text();
       return { ok: false, error: `Resend: ${res.status} ${body}` };
     }
-    return { ok: true };
+    const payload = (await res.json().catch(() => ({}))) as { id?: string };
+    return { ok: true, resendEmailId: typeof payload.id === 'string' ? payload.id : undefined };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return { ok: false, error: message };

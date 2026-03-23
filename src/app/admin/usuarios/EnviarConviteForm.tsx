@@ -37,7 +37,17 @@ export function EnviarConviteForm() {
         setError(String(json?.error ?? 'Falha ao enviar convite.'));
         return;
       }
-      setMessage(`Convite enviado para ${em}. A pessoa deve abrir o link no e-mail e concluir em /aceitar-convite.`);
+      if (json?.emailSkipped) {
+        setMessage(
+          `${String(json?.warning ?? 'E-mail não enviado pelo Resend.')} Link para enviar manualmente: ${String(json?.inviteLink ?? '')}`,
+        );
+      } else {
+        let msg = `Convite processado para ${em}. O convidado deve receber o e-mail com o link.`;
+        if (json?.resendEmailId) {
+          msg += ` ID no Resend: ${json.resendEmailId} — em resend.com/emails podes confirmar entrega ou falhas.`;
+        }
+        setMessage(msg);
+      }
       setEmail('');
       setDepartamento('');
       router.refresh();
