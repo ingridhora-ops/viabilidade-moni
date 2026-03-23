@@ -1,7 +1,6 @@
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
-import { isAdminRole } from '@/lib/authz';
 import { AutentiqueKeyForm } from './AutentiqueKeyForm';
 import { PerfilForm } from './PerfilForm';
 
@@ -24,7 +23,6 @@ export default async function PerfilPage() {
   const podeConfigurarAutentique =
     role === 'consultor' || role === 'admin' || role === 'supervisor';
   const temChaveAutentique = Boolean((profile?.autentique_api_key as string)?.trim());
-  const podeGerenciarUsuarios = isAdminRole(role);
 
   return (
     <div className="min-h-screen bg-stone-50">
@@ -49,21 +47,6 @@ export default async function PerfilPage() {
             <p className="mt-3 text-sm font-medium text-stone-500">Perfil</p>
             <p className="mt-0.5 text-stone-900">{role}</p>
           </div>
-
-          {podeGerenciarUsuarios && (
-            <div className="mt-4 rounded-lg border border-moni-primary/30 bg-moni-light/40 p-4">
-              <p className="text-sm font-semibold text-moni-dark">Administradores</p>
-              <p className="mt-1 text-sm text-stone-600">
-                Convites e papéis de acesso são geridos na página de utilizadores.
-              </p>
-              <Link
-                href="/admin/usuarios"
-                className="mt-3 inline-flex rounded-lg bg-moni-primary px-4 py-2 text-sm font-semibold text-white hover:bg-moni-secondary"
-              >
-                Gerenciar utilizadores e convites
-              </Link>
-            </div>
-          )}
 
           <PerfilForm
             initialNome={fullName}

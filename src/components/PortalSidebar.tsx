@@ -263,12 +263,6 @@ export function PortalSidebar({ user, userRole }: PortalSidebarProps) {
 
       {/* Navegação principal com macro-itens e subitens */}
       <nav className="flex-1 space-y-1 overflow-y-auto p-3">
-        {isAdmin && (
-          <Link href="/admin/usuarios" className={linkClassPrincipal(pathname.startsWith('/admin/usuarios'))}>
-            Gerenciar Usuários
-          </Link>
-        )}
-
         {renderMacro(
           'rede',
           'Rede de Franqueados',
@@ -439,6 +433,14 @@ export function PortalSidebar({ user, userRole }: PortalSidebarProps) {
               <div className={isSirene ? 'text-stone-400' : 'text-stone-500'}>
                 Papel: {resolvedRole || 'franqueado'}
               </div>
+              {isAdmin && (
+                <Link
+                  href="/admin/usuarios"
+                  className={`mt-1 block text-left font-semibold ${isSirene ? 'text-emerald-200 hover:text-white' : 'text-moni-primary hover:text-moni-secondary'}`}
+                >
+                  Gerenciar Usuários
+                </Link>
+              )}
               <Link
                 href="/perfil"
                 className={`mt-1 block text-left ${isSirene ? 'text-stone-200 hover:text-white' : 'text-moni-primary hover:text-moni-secondary'}`}
