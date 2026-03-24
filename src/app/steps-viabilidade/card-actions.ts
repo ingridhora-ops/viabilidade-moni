@@ -1088,21 +1088,30 @@ async function montarAtividadesChecklistPainel(supabase: SupabaseClient): Promis
 
 /**
  * Painel de Tarefas: lista agregada de todas as atividades (checklist) de todos os cards.
- * Sempre leitura via service role (mesmo universo em dev/prod, público ou qualquer login; filtros e ordenação no cliente).
+ * Preferência: service role (visão completa). Se SUPABASE_SERVICE_ROLE_KEY não existir ou falhar,
+ * usa sessão + RLS (útil em dev local ou quando a Vercel ainda não tem a env).
  */
 export async function getAtividadesChecklistPainel(): Promise<
   AtividadesChecklistPainelOk | { ok: false; error: string }
 > {
+  let supabase: SupabaseClient;
   try {
-    const supabase = createAdminClient();
-    return await montarAtividadesChecklistPainel(supabase);
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return {
-      ok: false,
-      error: `Configuração do servidor: defina SUPABASE_SERVICE_ROLE_KEY (necessário para o painel agregado). ${msg}`,
-    };
+    supabase = createAdminClient();
+  } catch {
+    const s = await createClient();
+    const {
+      data: { user },
+    } = await s.auth.getUser();
+    if (!user) {
+      return {
+        ok: false,
+        error:
+          'Painel agregado: defina SUPABASE_SERVICE_ROLE_KEY no servidor (ex.: Vercel) ou entre com uma conta. Sem a chave, visitantes não veem todas as atividades.',
+      };
+    }
+    return montarAtividadesChecklistPainel(s);
   }
+  return montarAtividadesChecklistPainel(supabase);
 }
 
 /** Documentos (anexo + link) por card e etapa */

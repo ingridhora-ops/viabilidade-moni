@@ -1,5 +1,6 @@
 'use server';
 
+import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { fetchDashboardRawData } from '@/lib/dashboard-novos-negocios/fetchData';
 
@@ -7,7 +8,7 @@ export type DashboardNovosNegociosRaw = Awaited<ReturnType<typeof fetchDashboard
 
 /**
  * Agregado de todos os kanbans (gráficos / KPIs).
- * Sempre leitura via service role — mesmo comportamento em dev/prod, público ou qualquer login.
+ * Preferência: service role. Sem chave, sessão + RLS se houver login.
  */
 export async function loadDashboardNovosNegociosData(): Promise<
   { ok: true; data: DashboardNovosNegociosRaw } | { ok: false; error: string }
@@ -16,11 +17,23 @@ export async function loadDashboardNovosNegociosData(): Promise<
     const admin = createAdminClient();
     const data = await fetchDashboardRawData(admin);
     return { ok: true, data };
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return {
-      ok: false,
-      error: `Configuração do servidor: defina SUPABASE_SERVICE_ROLE_KEY (necessário para o dashboard agregado). ${msg}`,
-    };
+  } catch {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) {
+      return {
+        ok: false,
+        error:
+          'Dashboard: defina SUPABASE_SERVICE_ROLE_KEY no servidor (ex.: Vercel) ou entre com uma conta.',
+      };
+    }
+    try {
+      const data = await fetchDashboardRawData(supabase);
+      return { ok: true, data };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
   }
 }
