@@ -3,12 +3,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Bar, Doughnut, Line } from 'react-chartjs-2';
 import type { ProcessoDashRow } from '@/lib/dashboard-novos-negocios/fetchData';
-import { createClient } from '@/lib/supabase/client';
 import { registerDashboardCharts } from '@/lib/charts/registerCharts';
 import { ProcessoDrilldownModal } from '@/components/dashboard/ProcessoDrilldownModal';
 import { PALETTE } from '@/lib/dashboard-novos-negocios/palette';
 import { fmtCompactMillions, fmtInt, fmtMM, fmtMoneyBRL, fmtPct } from '@/lib/dashboard-novos-negocios/format';
 import { fetchDashboardRawData } from '@/lib/dashboard-novos-negocios/fetchData';
+import { loadDashboardNovosNegociosData } from './actions';
 import {
   buildDashboardModel,
   type DashboardModel,
@@ -86,9 +86,12 @@ export function DashboardNovosNegociosClient() {
     setLoading(true);
     setError(null);
     try {
-      const supabase = createClient();
-      const raw = await fetchDashboardRawData(supabase);
-      setRawData(raw);
+      const res = await loadDashboardNovosNegociosData();
+      if (!res.ok) {
+        setError(res.error);
+        return;
+      }
+      setRawData(res.data);
       setUpdatedAt(new Date());
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erro ao carregar');
