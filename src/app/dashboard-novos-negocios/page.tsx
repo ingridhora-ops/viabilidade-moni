@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
+import { isPublicRedeNovosNegociosEnabled } from '@/lib/public-rede-novos';
 import { DashboardNovosNegociosClient } from './DashboardNovosNegociosClient';
 
 export default async function DashboardNovosNegociosPage() {
@@ -8,7 +9,7 @@ export default async function DashboardNovosNegociosPage() {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) redirect('/login');
+  if (!user && !isPublicRedeNovosNegociosEnabled()) redirect('/login');
 
   return (
     <div className="min-h-screen bg-white text-stone-900">

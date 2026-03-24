@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { Search } from 'lucide-react';
 import type { CardStatusFilter, CardTagFilter, ProcessoCard } from '@/app/steps-viabilidade/StepsKanbanColumn';
@@ -37,10 +37,6 @@ export function PainelCreditoClient({ byEtapa, initialOpenProcessId }: Props) {
   const [busca, setBusca] = useState('');
   const [statusFilter, setStatusFilter] = useState<CardStatusFilter>('ativos');
   const [tagFilter, setTagFilter] = useState<CardTagFilter>('todas');
-
-  useEffect(() => {
-    if (initialOpenProcessId) setStatusFilter('todos');
-  }, [initialOpenProcessId]);
 
   const filtered = useMemo(() => {
     const buscaNorm = normalizarParaBusca(busca);
@@ -81,6 +77,7 @@ export function PainelCreditoClient({ byEtapa, initialOpenProcessId }: Props) {
           <option value="ativos">Ativos</option>
           <option value="cancelados">Cancelados</option>
           <option value="removidos">Excluídos</option>
+          <option value="concluidos">Concluídos</option>
           <option value="todos">Todos</option>
         </select>
         <select

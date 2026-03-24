@@ -1,6 +1,7 @@
 'use server';
 
 import { createHash } from 'node:crypto';
+import { getPublicAppUrl } from '@/lib/app-url';
 import { createClient } from '@/lib/supabase/server';
 import { buscarMunicipioIbge } from '@/lib/ibge';
 import type { MunicipioIbge } from '@/lib/ibge';
@@ -187,7 +188,7 @@ export async function buscarCondominiosViaZap(processoId: string): Promise<Actio
     return { ok: false, error: 'Cidade e estado são obrigatórios para buscar condomínios no ZAP.' };
   }
 
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
+  const baseUrl = getPublicAppUrl();
   const url = new URL('/api/apify-zap', baseUrl).toString();
   console.log('[Etapa2] Chamando /api/apify-zap:', url, { cidade, estado });
   const res = await fetch(url, {

@@ -29,14 +29,17 @@ export async function POST(req: Request) {
     if (authErr) return NextResponse.json({ error: authErr.message }, { status: 500 });
 
     const role = normalizeAccessRole((profile as { role?: string | null }).role);
+    const now = new Date().toISOString();
     const { error: upErr } = await admin
       .from('profiles')
       .update({
         full_name: nomeCompleto,
         nome_completo: nomeCompleto,
         invite_token: null,
-        aprovado_em: role === 'pending' ? null : new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+        invite_email_sent_at: null,
+        invite_accepted_at: now,
+        aprovado_em: role === 'pending' ? null : now,
+        updated_at: now,
       })
       .eq('id', profile.id);
     if (upErr) return NextResponse.json({ error: upErr.message }, { status: 500 });

@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server';
 import { STEP2_EM_CASA_CHECKLIST } from '@/lib/painel-step2-em-casa-checklist';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getNextFKFromRedeFranqueados } from '@/lib/next-fk-franquia';
+import { allocNextOrdemColunaPainel } from '@/lib/painel-coluna-ordem';
 
 const STEP2_NOVO_NEGOCIO_ESTUDOS_DOCS_TITULOS = [
   'BCA',
@@ -200,6 +201,9 @@ export async function createProcesso(
       payload.link_pasta_drive = String(dadosNovoCard.linkPastaDrive).trim();
     }
   }
+
+  const etapaPainelStr = String(payload.etapa_painel ?? 'step_1');
+  payload.ordem_coluna_painel = await allocNextOrdemColunaPainel(supabase, etapaPainelStr);
 
   const { data: processo, error: errProcesso } = await supabase
     .from('processo_step_one')

@@ -20,7 +20,9 @@ export default async function AdminUsuariosPage() {
 
   const { data: rows } = await supabase
     .from('profiles')
-    .select('id, full_name, nome_completo, email, departamento, role, created_at, aprovado_em, invite_token')
+    .select(
+      'id, full_name, nome_completo, email, departamento, role, created_at, aprovado_em, invite_token, invite_email_sent_at, invite_accepted_at',
+    )
     .order('created_at', { ascending: false });
 
   return (
@@ -47,7 +49,10 @@ export default async function AdminUsuariosPage() {
                 <th className="px-3 py-2">E-mail</th>
                 <th className="px-3 py-2">Departamento</th>
                 <th className="px-3 py-2">Role</th>
-                <th className="px-3 py-2" title="Há um link /aceitar-convite válido até a pessoa concluir o cadastro">
+                <th
+                  className="px-3 py-2"
+                  title="Convite pendente (token), envio por Resend, ou utilizador que já aceitou o convite e definiu senha."
+                >
                   Convite ativo
                 </th>
                 <th className="px-3 py-2">Ações</th>
@@ -62,7 +67,22 @@ export default async function AdminUsuariosPage() {
                   <td className="px-3 py-2">{r.role ?? 'pending'}</td>
                   <td className="px-3 py-2 text-stone-600">
                     {r.invite_token ? (
-                      <span className="text-amber-800">Sim — e-mail pode ter sido enviado</span>
+                      r.invite_email_sent_at ? (
+                        <span className="text-emerald-800" title={String(r.invite_email_sent_at)}>
+                          Sim — e-mail enviado (Resend)
+                        </span>
+                      ) : (
+                        <span
+                          className="text-amber-900"
+                          title="Há link de convite, mas o envio não foi registado. Configure RESEND_API_KEY e RESEND_FROM na Vercel e reenvie o convite."
+                        >
+                          Link ativo — e-mail não enviado
+                        </span>
+                      )
+                    ) : r.invite_accepted_at ? (
+                      <span className="text-sky-900" title={`Convite aceito em ${String(r.invite_accepted_at)}`}>
+                        Usuário Logado
+                      </span>
                     ) : (
                       <span className="text-stone-400">Não</span>
                     )}

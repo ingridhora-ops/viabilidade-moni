@@ -8,7 +8,23 @@ import { fixRedeCsvSociosHeadersTextFromSheets, normalizeRedeCsvHeadersFromSheet
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getNextFKFromRedeFranqueados } from '@/lib/next-fk-franquia';
 import { gerarRegistroFranquiaPdf } from '@/lib/registro-franquia-pdf';
-import { sendRegistroFranquiaEmail } from '@/lib/email';
+import { getRegistroFranquiaRecipients, sendRegistroFranquiaEmail } from '@/lib/email';
+import { allocNextOrdemColunaPainel } from '@/lib/painel-coluna-ordem';
+import { getPainelDbForPublicEdit } from '@/lib/painel-public-edit';
+
+async function requireRedeAdminOrPublicLink(): Promise<
+  | { ok: true; supabase: Awaited<ReturnType<typeof createClient>>; userId: string }
+  | { ok: false; error: string }
+> {
+  const auth = await getPainelDbForPublicEdit();
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const { supabase, userId, isServiceRole } = auth;
+  if (isServiceRole) return { ok: true, supabase, userId };
+  const { data: profile } = await supabase.from('profiles').select('role').eq('id', userId).single();
+  const role = (profile?.role as string) ?? 'frank';
+  if (role !== 'admin') return { ok: false, error: 'Apenas administradores.' };
+  return { ok: true, supabase, userId };
+}
 
 export type CriarCardsDesdeRedeResult =
   | { ok: true; criados: number; mensagem: string }
@@ -25,15 +41,9 @@ export async function criarLinhaRedeECard(
   cardCidade?: string | null,
   cardEstado?: string | null,
 ): Promise<CriarLinhaRedeECardResult> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { ok: false, error: 'Faça login.' };
-
-  const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
-  const role = (profile?.role as string) ?? 'frank';
-  if (role !== 'admin') return { ok: false, error: 'Apenas administradores.' };
+  const gate = await requireRedeAdminOrPublicLink();
+  if (!gate.ok) return { ok: false, error: gate.error };
+  const { supabase, userId } = gate;
 
   const allow = new Set<string>(REDE_FRANQUEADOS_DB_KEYS as unknown as string[]);
   const clean: Record<string, unknown> = {};
@@ -73,21 +83,25 @@ export async function criarLinhaRedeECard(
     .single();
   if (errRede || !rede?.id) return { ok: false, error: errRede?.message ?? 'Erro ao criar linha na rede.' };
 
-  // Envio do Registro de Franquia (durante testes: sempre para o e-mail fixo)
   try {
-    const pdf = await gerarRegistroFranquiaPdf({
-      nomeFranqueado: String(clean.nome_completo ?? '').trim(),
-      dataAssinaturaContrato: String(clean.data_ass_contrato ?? '').trim(),
-      numeroFranquia: String(clean.n_franquia ?? '').trim(),
-    });
-    const emailRes = await sendRegistroFranquiaEmail({
-      to: 'ingrid.hora@moni.casa',
-      nomeFranqueado: String(clean.nome_completo ?? '').trim() || '-',
-      numeroFranquia: String(clean.n_franquia ?? '').trim() || '-',
-      dataAssinaturaContrato: String(clean.data_ass_contrato ?? '').trim() || '-',
-      pdfBytes: pdf,
-    });
-    if (!emailRes.ok) console.error('sendRegistroFranquiaEmail (criarLinhaRedeECard)', emailRes.error);
+    const recipients = getRegistroFranquiaRecipients(
+      clean.email_frank != null ? String(clean.email_frank) : undefined,
+    );
+    if (recipients.length > 0) {
+      const pdf = await gerarRegistroFranquiaPdf({
+        nomeFranqueado: String(clean.nome_completo ?? '').trim(),
+        dataAssinaturaContrato: String(clean.data_ass_contrato ?? '').trim(),
+        numeroFranquia: String(clean.n_franquia ?? '').trim(),
+      });
+      const emailRes = await sendRegistroFranquiaEmail({
+        to: recipients,
+        nomeFranqueado: String(clean.nome_completo ?? '').trim() || '-',
+        numeroFranquia: String(clean.n_franquia ?? '').trim() || '-',
+        dataAssinaturaContrato: String(clean.data_ass_contrato ?? '').trim() || '-',
+        pdfBytes: pdf,
+      });
+      if (!emailRes.ok) console.error('sendRegistroFranquiaEmail (criarLinhaRedeECard)', emailRes.error);
+    }
   } catch {
     // não quebra o fluxo de criação
   }
@@ -96,7 +110,7 @@ export async function criarLinhaRedeECard(
   const estado = (cardEstado && String(cardEstado).trim()) || (clean.estado_casa_frank && String(clean.estado_casa_frank).trim()) || null;
 
   const payload: Record<string, unknown> = {
-    user_id: user.id,
+    user_id: userId,
     cidade,
     estado,
     status: 'em_andamento',
@@ -127,6 +141,8 @@ export async function criarLinhaRedeECard(
   if (clean.tamanho_camisa_frank) payload.tamanho_camiseta_frank = clean.tamanho_camisa_frank;
   if (clean.socios) payload.socios = clean.socios;
 
+  payload.ordem_coluna_painel = await allocNextOrdemColunaPainel(supabase, 'step_1');
+
   const { data: processo, error: errProc } = await supabase
     .from('processo_step_one')
     .insert(payload)
@@ -135,7 +151,7 @@ export async function criarLinhaRedeECard(
   if (errProc || !processo?.id) return { ok: false, error: errProc?.message ?? 'Erro ao criar card.' };
 
   const etapas = Array.from({ length: 11 }, (_, i) => ({
-    user_id: user.id,
+    user_id: userId,
     processo_id: processo.id,
     etapa_id: i + 1,
     status: 'nao_iniciada' as const,
@@ -175,15 +191,9 @@ export async function getProximoNFranquia(): Promise<{ ok: true; valor: string }
  * que ainda não tem processo_id. Apenas admin.
  */
 export async function criarCardsDesdeRedeFranqueados(): Promise<CriarCardsDesdeRedeResult> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { ok: false, error: 'Faça login.' };
-
-  const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
-  const role = (profile?.role as string) ?? 'frank';
-  if (role !== 'admin') return { ok: false, error: 'Apenas administradores podem criar cards em lote.' };
+  const gate = await requireRedeAdminOrPublicLink();
+  if (!gate.ok) return { ok: false, error: gate.error };
+  const { supabase, userId } = gate;
 
   const { data: rows, error: errSelect } = await supabase
     .from('rede_franqueados')
@@ -208,7 +218,7 @@ export async function criarCardsDesdeRedeFranqueados(): Promise<CriarCardsDesdeR
     const estado = (row.estado_casa_frank && String(row.estado_casa_frank).trim()) || null;
 
     const payload: Record<string, unknown> = {
-      user_id: user.id,
+      user_id: userId,
       cidade,
       estado,
       status: 'em_andamento',
@@ -256,6 +266,8 @@ export async function criarCardsDesdeRedeFranqueados(): Promise<CriarCardsDesdeR
       payload.tamanho_camiseta_frank = String(row.tamanho_camisa_frank).trim();
     if (row.socios != null && String(row.socios).trim() !== '') payload.socios = String(row.socios).trim();
 
+    payload.ordem_coluna_painel = await allocNextOrdemColunaPainel(supabase, 'step_1');
+
     const { data: processo, error: errInsert } = await supabase
       .from('processo_step_one')
       .insert(payload)
@@ -268,7 +280,7 @@ export async function criarCardsDesdeRedeFranqueados(): Promise<CriarCardsDesdeR
     if (!processo?.id) continue;
 
     const etapas = Array.from({ length: 11 }, (_, i) => ({
-      user_id: user.id,
+      user_id: userId,
       processo_id: processo.id,
       etapa_id: i + 1,
       status: 'nao_iniciada' as const,
@@ -302,15 +314,9 @@ export async function criarCardsDesdeRedeFranqueados(): Promise<CriarCardsDesdeR
  * Retorna quantas linhas da Rede ainda não têm card (processo_id nulo).
  */
 export async function contarLinhasSemCard(): Promise<{ ok: true; total: number } | { ok: false; error: string }> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { ok: false, error: 'Faça login.' };
-
-  const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
-  const role = (profile?.role as string) ?? 'frank';
-  if (role !== 'admin') return { ok: false, error: 'Apenas administradores.' };
+  const gate = await requireRedeAdminOrPublicLink();
+  if (!gate.ok) return { ok: false, error: gate.error };
+  const { supabase } = gate;
 
   const { count, error } = await supabase
     .from('rede_franqueados')
@@ -330,15 +336,9 @@ export type ExcluirRedeFranqueadoResult =
   | { ok: false; error: string };
 
 export async function excluirRedeFranqueado(id: string): Promise<ExcluirRedeFranqueadoResult> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { ok: false, error: 'Faça login.' };
-
-  const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
-  const role = (profile?.role as string) ?? 'frank';
-  if (role !== 'admin') return { ok: false, error: 'Apenas administradores.' };
+  const gate = await requireRedeAdminOrPublicLink();
+  if (!gate.ok) return { ok: false, error: gate.error };
+  const { supabase } = gate;
 
   if (!id) return { ok: false, error: 'ID inválido.' };
 
@@ -357,15 +357,9 @@ export async function atualizarRedeFranqueado(
   id: string,
   patch: Partial<Record<RedeFranqueadoDbKey, string | null>>,
 ): Promise<AtualizarRedeFranqueadoResult> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { ok: false, error: 'Faça login.' };
-
-  const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
-  const role = (profile?.role as string) ?? 'frank';
-  if (role !== 'admin') return { ok: false, error: 'Apenas administradores.' };
+  const gate = await requireRedeAdminOrPublicLink();
+  if (!gate.ok) return { ok: false, error: gate.error };
+  const { supabase } = gate;
 
   if (!id) return { ok: false, error: 'ID inválido.' };
 
@@ -404,15 +398,9 @@ export type ImportarRedeCSVResult =
  * Importa linhas a partir de um CSV (ex.: exportado do Google Sheets) para a tabela rede_franqueados. Apenas admin.
  */
 export async function importarRedeFranqueadosCSV(csvText: string): Promise<ImportarRedeCSVResult> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { ok: false, error: 'Faça login.' };
-
-  const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
-  const role = (profile?.role as string) ?? 'frank';
-  if (role !== 'admin') return { ok: false, error: 'Apenas administradores podem importar CSV.' };
+  const gate = await requireRedeAdminOrPublicLink();
+  if (!gate.ok) return { ok: false, error: gate.error };
+  const { supabase, userId } = gate;
 
   // (BUG 1) Normaliza cabeçalhos exportados pelo Sheets (trim + canonicalização)
   const normalizedHeaders = normalizeRedeCsvHeadersFromSheets(csvText);
@@ -479,20 +467,28 @@ export async function importarRedeFranqueadosCSV(csvText: string): Promise<Impor
     try {
       const { data: insertedRows } = await supabase
         .from('rede_franqueados')
-        .select('id, nome_completo, n_franquia, data_ass_contrato')
+        .select('id, nome_completo, n_franquia, data_ass_contrato, email_frank')
         .in('id', insertedIds);
 
       for (const r of insertedRows ?? []) {
+        const row = r as {
+          nome_completo?: string | null;
+          data_ass_contrato?: string | null;
+          n_franquia?: string | null;
+          email_frank?: string | null;
+        };
+        const recipients = getRegistroFranquiaRecipients(row.email_frank);
+        if (recipients.length === 0) continue;
         const pdf = await gerarRegistroFranquiaPdf({
-          nomeFranqueado: String((r as { nome_completo?: string | null }).nome_completo ?? '').trim(),
-          dataAssinaturaContrato: String((r as { data_ass_contrato?: string | null }).data_ass_contrato ?? '').trim(),
-          numeroFranquia: String((r as { n_franquia?: string | null }).n_franquia ?? '').trim(),
+          nomeFranqueado: String(row.nome_completo ?? '').trim(),
+          dataAssinaturaContrato: String(row.data_ass_contrato ?? '').trim(),
+          numeroFranquia: String(row.n_franquia ?? '').trim(),
         });
         const emailRes = await sendRegistroFranquiaEmail({
-          to: 'ingrid.hora@moni.casa',
-          nomeFranqueado: String((r as { nome_completo?: string | null }).nome_completo ?? '').trim() || '-',
-          numeroFranquia: String((r as { n_franquia?: string | null }).n_franquia ?? '').trim() || '-',
-          dataAssinaturaContrato: String((r as { data_ass_contrato?: string | null }).data_ass_contrato ?? '').trim() || '-',
+          to: recipients,
+          nomeFranqueado: String(row.nome_completo ?? '').trim() || '-',
+          numeroFranquia: String(row.n_franquia ?? '').trim() || '-',
+          dataAssinaturaContrato: String(row.data_ass_contrato ?? '').trim() || '-',
           pdfBytes: pdf,
         });
         if (!emailRes.ok) console.error('sendRegistroFranquiaEmail (importarRedeFranqueadosCSV)', emailRes.error);
@@ -526,7 +522,7 @@ export async function importarRedeFranqueadosCSV(csvText: string): Promise<Impor
       const estado = (row.estado_casa_frank && String(row.estado_casa_frank).trim()) || null;
 
       const payload: Record<string, unknown> = {
-        user_id: user.id,
+        user_id: userId,
         cidade,
         estado,
         status: 'em_andamento',
@@ -564,7 +560,7 @@ export async function importarRedeFranqueadosCSV(csvText: string): Promise<Impor
       if (!processo?.id) continue;
 
       const etapas = Array.from({ length: 11 }, (_, i) => ({
-        user_id: user.id,
+        user_id: userId,
         processo_id: processo.id,
         etapa_id: i + 1,
         status: 'nao_iniciada' as const,

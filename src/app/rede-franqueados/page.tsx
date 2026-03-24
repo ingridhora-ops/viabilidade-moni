@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import { isAdminRole } from '@/lib/authz';
+import { isPublicRedeNovosNegociosEnabled } from '@/lib/public-rede-novos';
 import { fetchRedeFranqueadosRows } from '@/lib/rede-franqueados';
 import { TabelaRedeFranqueadosEditavel } from '@/components/TabelaRedeFranqueadosEditavel';
 import { contarLinhasSemCard } from './actions';
@@ -10,24 +11,33 @@ import { ImportarRedeCSVButton } from './ImportarRedeCSVButton';
 import { ExportarRedeCSVButton } from './ExportarRedeCSVButton';
 import { AdicionarRedeECardButton } from './AdicionarRedeECardButton';
 import { RedeDashboard } from './RedeDashboard';
+import { createAdminClient } from '@/lib/supabase/admin';
 
 export default async function RedeFranqueadosPage() {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) redirect('/login');
+  const publicAccess = isPublicRedeNovosNegociosEnabled();
+  if (!user && !publicAccess) redirect('/login');
 
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('role')
-    .eq('id', user.id)
-    .single();
+  let db = supabase;
+  if (!user && publicAccess) {
+    try {
+      db = createAdminClient();
+    } catch {
+      /* sem service role: RLS pode ocultar linhas */
+    }
+  }
+
+  const { data: profile } = user
+    ? await supabase.from('profiles').select('role').eq('id', user.id).single()
+    : { data: null };
   const role = (profile?.role as string) ?? 'frank';
-  const canManage = isAdminRole(role);
+  const canManage = (Boolean(user) && isAdminRole(role)) || publicAccess;
 
   const [rows, countResult] = await Promise.all([
-    fetchRedeFranqueadosRows(supabase),
+    fetchRedeFranqueadosRows(db),
     canManage ? contarLinhasSemCard() : Promise.resolve({ ok: true as const, total: 0 }),
   ]);
   const linhasSemCard = countResult.ok ? countResult.total : 0;

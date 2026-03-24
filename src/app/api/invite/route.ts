@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { sendEmailViaResend } from '@/lib/email';
+import { getPublicAppUrl } from '@/lib/app-url';
+import { humanizeResendError, sendEmailViaResend } from '@/lib/email';
 import { normalizeAccessRole } from '@/lib/authz';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
@@ -258,13 +259,15 @@ export async function POST(req: Request) {
         role,
         departamento,
         invite_token: token,
+        invite_email_sent_at: null,
+        invite_accepted_at: null,
         convidado_por: user.id,
         updated_at: new Date().toISOString(),
       })
       .eq('id', profileId);
     if (upErr) return NextResponse.json({ error: upErr.message }, { status: 500 });
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
+    const appUrl = getPublicAppUrl();
     const inviteLink = `${appUrl}/aceitar-convite?token=${encodeURIComponent(token)}`;
     const mail = await sendEmailViaResend({
       to: email,
@@ -273,7 +276,21 @@ export async function POST(req: Request) {
       html: `<p>Você recebeu um convite de acesso.</p><p><a href="${inviteLink}">Aceitar convite</a></p>`,
     });
     if (!mail.ok) {
-      return NextResponse.json({ error: mail.error }, { status: 500 });
+      return NextResponse.json(
+        {
+          error: humanizeResendError(mail.error),
+          inviteLink,
+          resendFailed: true,
+        },
+        { status: 502 },
+      );
+    }
+    if (!mail.skipped) {
+      const { error: sentErr } = await admin
+        .from('profiles')
+        .update({ invite_email_sent_at: new Date().toISOString() })
+        .eq('id', profileId);
+      if (sentErr) return NextResponse.json({ error: sentErr.message }, { status: 500 });
     }
 
     const isProd = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';

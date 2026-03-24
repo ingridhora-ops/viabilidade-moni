@@ -33,9 +33,11 @@ export type ProcessoCard = {
   has_atividade_atrasada?: boolean;
   has_atividade_atencao?: boolean;
   has_comite_aprovado?: boolean;
+  /** Ordem dentro da coluna `etapa_painel` (menor = mais acima). */
+  ordem_coluna_painel?: number | null;
 };
 
-export type CardStatusFilter = 'ativos' | 'cancelados' | 'removidos' | 'todos';
+export type CardStatusFilter = 'ativos' | 'cancelados' | 'removidos' | 'concluidos' | 'todos';
 export type CardTagFilter = 'todas' | 'atrasado' | 'atencao';
 
 export function StepsKanbanColumn({
@@ -47,6 +49,7 @@ export function StepsKanbanColumn({
   initialOpenProcessId,
   statusFilter = 'ativos',
   tagFilter = 'todas',
+  kanbanReadOnly = false,
 }: {
   title: string;
   subtitle?: string;
@@ -56,6 +59,8 @@ export function StepsKanbanColumn({
   initialOpenProcessId?: string;
   statusFilter?: CardStatusFilter;
   tagFilter?: CardTagFilter;
+  /** Sem sessão (ex.: painel público): esconde controles de reordenar. */
+  kanbanReadOnly?: boolean;
 }) {
   const router = useRouter();
 
@@ -64,16 +69,18 @@ export function StepsKanbanColumn({
       const st = String(p.status ?? '').toLowerCase();
       const isCancelado = st === 'cancelado' || Boolean(p.cancelado_em);
       const isRemovido = st === 'removido' || Boolean(p.removido_em);
+      const isConcluido = st === 'concluido';
       if (statusFilter !== 'todos') {
         const wanted = statusFilter;
-        if (wanted === 'ativos' && (isCancelado || isRemovido)) return false;
+        if (wanted === 'ativos' && (isCancelado || isRemovido || isConcluido)) return false;
         if (wanted === 'cancelados' && !isCancelado) return false;
         if (wanted === 'removidos' && !isRemovido) return false;
+        if (wanted === 'concluidos' && !isConcluido) return false;
       }
 
       if (tagFilter !== 'todas') {
-        // Cards cancelados/removidos não exibem tags de prazo.
-        if (isCancelado || isRemovido) return false;
+        // Cards cancelados/removidos/concluídos não exibem tags de prazo.
+        if (isCancelado || isRemovido || isConcluido) return false;
         const hasAtrasado = Boolean(p.has_atividade_atrasada);
         const hasAtencao = Boolean(p.has_atividade_atencao) && !hasAtrasado;
         if (tagFilter === 'atrasado' && !hasAtrasado) return false;
@@ -159,8 +166,16 @@ export function StepsKanbanColumn({
       <div
         className={`max-h-[70vh] space-y-2 overflow-y-auto p-2 ${isStep1 ? 'bg-green-50/50' : ''}`}
       >
-        {processosFiltrados.map((p) => (
-          <PainelCard key={p.id} p={p} etapaKey={etapaKey} autoOpen={p.id === initialOpenProcessId} />
+        {processosFiltrados.map((p, i) => (
+          <PainelCard
+            key={p.id}
+            p={p}
+            etapaKey={etapaKey}
+            autoOpen={p.id === initialOpenProcessId}
+            vizinhoAcimaId={i > 0 ? processosFiltrados[i - 1]?.id : undefined}
+            vizinhoAbaixoId={i < processosFiltrados.length - 1 ? processosFiltrados[i + 1]?.id : undefined}
+            kanbanReadOnly={kanbanReadOnly}
+          />
         ))}
         {processosFiltrados.length === 0 && (
           <div className="rounded-lg border border-dashed border-stone-200 p-4 text-center text-sm text-stone-400">

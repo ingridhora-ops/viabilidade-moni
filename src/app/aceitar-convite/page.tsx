@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
+import Link from 'next/link';
 
 export default function AceitarConvitePage() {
   const router = useRouter();
@@ -52,6 +53,16 @@ export default function AceitarConvitePage() {
     <div className="mx-auto max-w-md p-6">
       <h1 className="text-xl font-bold text-moni-dark">Aceitar convite</h1>
       <p className="mt-1 text-sm text-stone-600">Defina seu nome e senha para ativar o acesso.</p>
+      {!token && (
+        <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+          <strong>Link inválido ou incompleto</strong> — falta o parâmetro <code className="rounded bg-white/80 px-1">token</code> no
+          endereço. Abre o link diretamente a partir do e-mail de convite (deve ser{' '}
+          <code className="rounded bg-white/80 px-1">…/aceitar-convite?token=…</code>
+          ). Se o e-mail apontar para <code className="rounded bg-white/80 px-1">localhost</code>, o convite foi gerado em ambiente de
+          desenvolvimento: pede ao administrador que configure <code className="rounded bg-white/80 px-1">NEXT_PUBLIC_APP_URL</code> na Vercel e
+          reenvie o convite. <Link href="/login" className="text-moni-primary underline">Ir para login</Link>
+        </div>
+      )}
       <form onSubmit={onSubmit} className="mt-4 space-y-3">
         <input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Nome completo" className="w-full rounded border px-3 py-2" required />
         <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Senha" className="w-full rounded border px-3 py-2" required />

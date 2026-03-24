@@ -12,6 +12,8 @@ import {
   type FaseCreditoDashboard,
 } from '@/lib/painel/cancelamento-motivos';
 import { precisaMotivoReprovacaoComiteNoCancelamento } from '@/lib/painel/dashboard-etapas';
+import { allocNextOrdemColunaPainel } from '@/lib/painel-coluna-ordem';
+import { getPainelDbForPublicEdit } from '@/lib/painel-public-edit';
 
 const STEP2_NOVO_NEGOCIO_ESTUDOS_DOCS_TITULOS = [
   'BCA',
@@ -136,11 +138,9 @@ export async function getResumoProcessoStep1(processoId: string): Promise<
   | { ok: true; data: ProcessoResumoStep1 }
   | { ok: false; error: string }
 > {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { ok: false, error: 'Faça login.' };
+  const auth = await getPainelDbForPublicEdit();
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const { supabase, user, userId, autorNome } = auth;
 
   const { data, error } = await supabase
     .from('processo_step_one')
@@ -210,11 +210,9 @@ export async function getRelacionadosProcesso(
     }
   | { ok: false; error: string }
 > {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { ok: false, error: 'Faça login.' };
+  const auth = await getPainelDbForPublicEdit();
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const { supabase, user, userId, autorNome } = auth;
 
   const { data: atual, error: atualErr } = await supabase
     .from('processo_step_one')
@@ -265,13 +263,9 @@ export async function updateDadosPreObra(
     previsao_inicio_obra: string | null;
   },
 ): Promise<PainelActionResult> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { ok: false, error: 'Faça login.' };
-
-  const autorNome = await resolveAutorNome(supabase, user.id, user.email);
+  const auth = await getPainelDbForPublicEdit();
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const { supabase, user, userId, autorNome } = auth;
 
   const normalize = (v: string | null | undefined) => {
     const s = String(v ?? '').trim();
@@ -299,7 +293,7 @@ export async function updateDadosPreObra(
   await registrarEventoCard(
     supabase,
     processoId,
-    user.id,
+    userId,
     autorNome,
     null,
     'dados_pre_obra_update',
@@ -330,13 +324,10 @@ export async function atualizarEtapaPainel(
   const validKeys = new Set(PAINEL_COLUMNS.map((c) => c.key));
   if (!validKeys.has(etapaKey)) return { ok: false, error: 'Etapa inválida.' };
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { ok: false, error: 'Faça login.' };
+  const auth = await getPainelDbForPublicEdit();
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const { supabase, user, userId, autorNome } = auth;
 
-  const autorNome = await resolveAutorNome(supabase, user.id, user.email);
   const { data: beforeProc } = await supabase
     .from('processo_step_one')
     .select('etapa_painel')
@@ -350,11 +341,16 @@ export async function atualizarEtapaPainel(
   if (etapaKey === 'credito_terreno') fasePatch.fase_credito = 'check_legal_mais_credito';
   if (etapaKey === 'credito_obra') fasePatch.fase_credito = 'contratacao_credito';
 
+  const fromEtapa = (beforeProc as { etapa_painel?: string } | null)?.etapa_painel ?? null;
+  const ordemColuna =
+    fromEtapa !== etapaKey ? await allocNextOrdemColunaPainel(supabase, etapaKey) : undefined;
+
   const { error } = await supabase
     .from('processo_step_one')
     .update({
       etapa_painel: etapaKey,
       updated_at: new Date().toISOString(),
+      ...(ordemColuna !== undefined ? { ordem_coluna_painel: ordemColuna } : {}),
       ...fasePatch,
     })
     .eq('id', processoId);
@@ -364,7 +360,7 @@ export async function atualizarEtapaPainel(
   await registrarEventoCard(
     supabase,
     processoId,
-    user.id,
+    userId,
     autorNome,
     beforeProc?.etapa_painel ?? null,
     'card_move',
@@ -503,6 +499,8 @@ export async function atualizarEtapaPainel(
 
         if (existingChild?.id) return { ok: true };
 
+        const ordemNova = await allocNextOrdemColunaPainel(supabase, targetEtapa);
+
         const { error: insertErr } = await supabase.from('processo_step_one').insert({
           user_id: parentProc.user_id,
           cidade: parentProc.cidade,
@@ -523,6 +521,7 @@ export async function atualizarEtapaPainel(
           quadra_lote: parentProc.quadra_lote,
           observacoes: parentProc.observacoes,
           etapa_painel: targetEtapa,
+          ordem_coluna_painel: ordemNova,
           origem_credito_processo_id: relationField === 'origem_credito_processo_id' ? parentProc.id : null,
           origem_contabilidade_processo_id: relationField === 'origem_contabilidade_processo_id' ? parentProc.id : null,
           historico_base_id: baseId,
@@ -566,15 +565,110 @@ export async function atualizarEtapaPainel(
   return { ok: true };
 }
 
+function reorderMoveBefore(global: string[], moving: string, beforeId: string): string[] {
+  if (moving === beforeId) return global;
+  const g = global.filter((id) => id !== moving);
+  const i = g.indexOf(beforeId);
+  if (i < 0) return global;
+  return [...g.slice(0, i), moving, ...g.slice(i)];
+}
+
+function reorderMoveAfter(global: string[], moving: string, afterId: string): string[] {
+  if (moving === afterId) return global;
+  const g = global.filter((id) => id !== moving);
+  const i = g.indexOf(afterId);
+  if (i < 0) return global;
+  return [...g.slice(0, i + 1), moving, ...g.slice(i + 1)];
+}
+
+/** Sobe/desce o card na coluna; `vizinhoId` é o card imediatamente acima (up) ou abaixo (down) na lista que o usuário vê. */
+export async function reordenarCardNaColunaPainel(
+  processoId: string,
+  etapaKey: PainelColumnKey,
+  direcao: 'up' | 'down',
+  vizinhoId: string,
+): Promise<PainelActionResult> {
+  const validKeys = new Set(PAINEL_COLUMNS.map((c) => c.key));
+  if (!validKeys.has(etapaKey)) return { ok: false, error: 'Etapa inválida.' };
+
+  const auth = await getPainelDbForPublicEdit();
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const { supabase, user, userId, autorNome } = auth;
+
+  const { data: row } = await supabase
+    .from('processo_step_one')
+    .select('etapa_painel, trava_painel, status, cancelado_em, removido_em')
+    .eq('id', processoId)
+    .maybeSingle();
+  if (!row) return { ok: false, error: 'Processo não encontrado.' };
+  const r = row as {
+    etapa_painel?: string | null;
+    trava_painel?: boolean | null;
+    status?: string | null;
+    cancelado_em?: string | null;
+    removido_em?: string | null;
+  };
+  if (r.etapa_painel !== etapaKey) return { ok: false, error: 'Card não está nesta coluna.' };
+  if (r.trava_painel) return { ok: false, error: 'Card travado não pode ser reordenado.' };
+  const st = String(r.status ?? '').toLowerCase();
+  if (st === 'cancelado' || r.cancelado_em) return { ok: false, error: 'Card cancelado não pode ser reordenado.' };
+  if (st === 'removido' || r.removido_em) return { ok: false, error: 'Card excluído não pode ser reordenado.' };
+  if (st === 'concluido') return { ok: false, error: 'Card concluído não pode ser reordenado.' };
+
+  const { data: vizRow } = await supabase
+    .from('processo_step_one')
+    .select('etapa_painel')
+    .eq('id', vizinhoId)
+    .maybeSingle();
+  if (!vizRow || (vizRow as { etapa_painel?: string }).etapa_painel !== etapaKey) {
+    return { ok: false, error: 'Vizinho inválido.' };
+  }
+
+  const { data: allRows } = await supabase
+    .from('processo_step_one')
+    .select('id')
+    .eq('etapa_painel', etapaKey)
+    .order('ordem_coluna_painel', { ascending: true })
+    .order('updated_at', { ascending: false })
+    .order('id', { ascending: true });
+
+  const globalOrder = (allRows ?? []).map((x) => String((x as { id: string }).id));
+  if (!globalOrder.includes(processoId) || !globalOrder.includes(vizinhoId)) {
+    return { ok: false, error: 'Ordem da coluna desatualizada. Atualize a página.' };
+  }
+
+  const nextOrder =
+    direcao === 'up'
+      ? reorderMoveBefore(globalOrder, processoId, vizinhoId)
+      : reorderMoveAfter(globalOrder, processoId, vizinhoId);
+
+  if (nextOrder.join(',') === globalOrder.join(',')) {
+    return { ok: false, error: 'Não foi possível alterar a ordem.' };
+  }
+
+  const now = new Date().toISOString();
+  const results = await Promise.all(
+    nextOrder.map((id, idx) =>
+      supabase.from('processo_step_one').update({ ordem_coluna_painel: idx, updated_at: now }).eq('id', id),
+    ),
+  );
+  const failed = results.find((x) => x.error);
+  if (failed?.error) return { ok: false, error: failed.error.message };
+
+  revalidatePath('/painel-novos-negocios');
+  revalidatePath('/painel-contabilidade');
+  revalidatePath('/painel-credito');
+  revalidatePath('/dashboard-novos-negocios');
+  return { ok: true };
+}
+
 export async function atualizarFaseContabilidadeDashboard(
   processoId: string,
   fase: FaseContabilidadeDashboard,
 ): Promise<PainelActionResult> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { ok: false, error: 'Faça login.' };
+  const auth = await getPainelDbForPublicEdit();
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const { supabase, user, userId, autorNome } = auth;
 
   const { data: row } = await supabase
     .from('processo_step_one')
@@ -601,11 +695,9 @@ export async function atualizarFaseCreditoDashboard(
   processoId: string,
   fase: FaseCreditoDashboard,
 ): Promise<PainelActionResult> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { ok: false, error: 'Faça login.' };
+  const auth = await getPainelDbForPublicEdit();
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const { supabase, user, userId, autorNome } = auth;
 
   const { data: row } = await supabase
     .from('processo_step_one')
@@ -630,13 +722,9 @@ export async function atualizarFaseCreditoDashboard(
 
 /** Alterna a flag "travado" do card no Painel. */
 export async function toggleTravaPainel(processoId: string): Promise<PainelActionResult> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { ok: false, error: 'Faça login.' };
-
-  const autorNome = await resolveAutorNome(supabase, user.id, user.email);
+  const auth = await getPainelDbForPublicEdit();
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const { supabase, user, userId, autorNome } = auth;
 
   const { data: row, error: fetchErr } = await supabase
     .from('processo_step_one')
@@ -660,7 +748,7 @@ export async function toggleTravaPainel(processoId: string): Promise<PainelActio
   await registrarEventoCard(
     supabase,
     processoId,
-    user.id,
+    userId,
     autorNome,
     null,
     'card_trava',
@@ -684,11 +772,9 @@ export async function cancelarProcessoPainel(
   processoId: string,
   input: CancelarProcessoPainelInput,
 ): Promise<MotivoActionResult> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { ok: false, error: 'Faça login.' };
+  const auth = await getPainelDbForPublicEdit();
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const { supabase, user, userId, autorNome } = auth;
 
   const mc = input.motivoCancelamento;
   if (!mc) return { ok: false, error: 'Selecione o motivo do cancelamento.' };
@@ -733,8 +819,6 @@ export async function cancelarProcessoPainel(
   }
   if ((input.observacao ?? '').trim()) canceladoMotivoParts.push(input.observacao!.trim());
 
-  const autorNome = await resolveAutorNome(supabase, user.id, user.email);
-
   const { error } = await supabase
     .from('processo_step_one')
     .update({
@@ -757,7 +841,7 @@ export async function cancelarProcessoPainel(
   await registrarEventoCard(
     supabase,
     processoId,
-    user.id,
+    userId,
     autorNome,
     null,
     'card_cancel',
@@ -775,14 +859,10 @@ export async function cancelarProcessoPainel(
 }
 
 export async function removerProcessoPainel(processoId: string, motivo: string): Promise<MotivoActionResult> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { ok: false, error: 'Faça login.' };
+  const auth = await getPainelDbForPublicEdit();
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const { supabase, user, userId, autorNome } = auth;
   if (!motivo.trim()) return { ok: false, error: 'Informe o motivo da remoção.' };
-
-  const autorNome = await resolveAutorNome(supabase, user.id, user.email);
 
   const { error } = await supabase
     .from('processo_step_one')
@@ -799,7 +879,7 @@ export async function removerProcessoPainel(processoId: string, motivo: string):
   await registrarEventoCard(
     supabase,
     processoId,
-    user.id,
+    userId,
     autorNome,
     null,
     'card_remove',

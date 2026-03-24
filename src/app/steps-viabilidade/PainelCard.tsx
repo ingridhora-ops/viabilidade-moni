@@ -1,13 +1,32 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { MessageSquare } from 'lucide-react';
+import { useEffect, useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
+import { ChevronDown, ChevronUp, MessageSquare } from 'lucide-react';
 import type { PainelColumnKey } from './painelColumns';
-import { PAINEL_COLUMNS } from './painelColumns';
 import { CardDetalheModal } from './CardDetalheModal';
 import type { ProcessoCard } from './StepsKanbanColumn';
+import { reordenarCardNaColunaPainel } from './actions';
 
-export function PainelCard({ p, etapaKey, autoOpen = false }: { p: ProcessoCard; etapaKey: PainelColumnKey; autoOpen?: boolean }) {
+export function PainelCard({
+  p,
+  etapaKey,
+  autoOpen = false,
+  vizinhoAcimaId,
+  vizinhoAbaixoId,
+  kanbanReadOnly = false,
+}: {
+  p: ProcessoCard;
+  etapaKey: PainelColumnKey;
+  autoOpen?: boolean;
+  /** Card exibido imediatamente acima (lista filtrada); usado para subir. */
+  vizinhoAcimaId?: string;
+  /** Card exibido imediatamente abaixo; usado para descer. */
+  vizinhoAbaixoId?: string;
+  kanbanReadOnly?: boolean;
+}) {
+  const router = useRouter();
+  const [reorderPending, startTransition] = useTransition();
   const [modalOpen, setModalOpen] = useState(false);
   const [autoOpened, setAutoOpened] = useState(false);
   /** Mesma estrutura do Step 2 (Nº franquia - condomínio - quadra/lote) em todo o fluxo após Step 1, inclusive Contabilidade e Crédito. */
@@ -15,6 +34,7 @@ export function PainelCard({ p, etapaKey, autoOpen = false }: { p: ProcessoCard;
   const st = String(p.status ?? '').toLowerCase();
   const isCancelado = st === 'cancelado' || Boolean(p.cancelado_em);
   const isRemovido = st === 'removido' || Boolean(p.removido_em);
+  const isConcluido = st === 'concluido';
   const motivoCancelado = p.cancelado_motivo ?? null;
   const motivoRemovido = p.removido_motivo ?? null;
   const processoLabel = `${p.cidade ?? 'Sem cidade'}${p.estado ? `, ${p.estado}` : ''}`;
@@ -24,6 +44,8 @@ export function PainelCard({ p, etapaKey, autoOpen = false }: { p: ProcessoCard;
     etapaKey === 'step_1'
       ? `${numeroFranquia}`
       : `${numeroFranquia} - ${p.nome_condominio ?? '—'}${p.quadra_lote ? ` - ${p.quadra_lote}` : ''}`;
+
+  const reorderEnabled = !kanbanReadOnly && !p.trava_painel && !isCancelado && !isRemovido;
 
   const handleDragStart = (e: React.DragEvent<HTMLDivElement>) => {
     if (p.trava_painel || isCancelado || isRemovido) return;
@@ -44,6 +66,16 @@ export function PainelCard({ p, etapaKey, autoOpen = false }: { p: ProcessoCard;
     setAutoOpened(true);
   }, [autoOpen, autoOpened]);
 
+  const handleReorder = (dir: 'up' | 'down', vizinhoId: string | undefined) => {
+    if (!vizinhoId || reorderPending) return;
+    startTransition(() => {
+      void (async () => {
+        const res = await reordenarCardNaColunaPainel(p.id, etapaKey, dir, vizinhoId);
+        if (res.ok) router.refresh();
+      })();
+    });
+  };
+
   return (
     <>
       <div
@@ -55,9 +87,43 @@ export function PainelCard({ p, etapaKey, autoOpen = false }: { p: ProcessoCard;
               : 'border-stone-200 bg-white'
         }`}
         onClick={() => setModalOpen(true)}
-        draggable={!p.trava_painel}
+        draggable={!p.trava_painel && !isCancelado && !isRemovido && !isConcluido}
         onDragStart={handleDragStart}
       >
+        {reorderEnabled ? (
+          <div className="absolute left-2 top-2 flex flex-col gap-0">
+            <button
+              type="button"
+              disabled={!vizinhoAcimaId || reorderPending}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleReorder('up', vizinhoAcimaId);
+              }}
+              className="rounded p-0.5 text-stone-400 hover:bg-stone-200 hover:text-stone-700 disabled:pointer-events-none disabled:opacity-30"
+              title="Mover para cima na coluna"
+              aria-label="Mover card para cima na coluna"
+            >
+              <ChevronUp className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              disabled={!vizinhoAbaixoId || reorderPending}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleReorder('down', vizinhoAbaixoId);
+              }}
+              className="rounded p-0.5 text-stone-400 hover:bg-stone-200 hover:text-stone-700 disabled:pointer-events-none disabled:opacity-30"
+              title="Mover para baixo na coluna"
+              aria-label="Mover card para baixo na coluna"
+            >
+              <ChevronDown className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ) : null}
         <div className="absolute right-2 top-2 flex gap-0.5">
           <button
             type="button"
@@ -68,7 +134,7 @@ export function PainelCard({ p, etapaKey, autoOpen = false }: { p: ProcessoCard;
             <MessageSquare className="h-3.5 w-3.5" />
           </button>
         </div>
-        <div className="block pr-10">
+        <div className={`block pr-10 ${reorderEnabled ? 'pl-7' : ''}`}>
           {p.trava_painel && (
             <span className="mb-1 inline-block rounded bg-amber-200 px-1.5 py-0.5 text-[10px] font-medium text-amber-900">
               Travado
@@ -146,7 +212,9 @@ export function PainelCard({ p, etapaKey, autoOpen = false }: { p: ProcessoCard;
           ) : null}
         </div>
         <div className="mt-2 border-t border-stone-100 pt-2 text-[10px] text-stone-400">
-          Arraste o card para mudar de etapa.
+          {reorderEnabled
+            ? 'Arraste para mudar de etapa. Setas para ordem na coluna.'
+            : 'Arraste o card para mudar de etapa.'}
         </div>
       </div>
       {modalOpen && (

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { sendRegistroFranquiaEmail } from '@/lib/email';
+import { getRegistroFranquiaRecipients, sendRegistroFranquiaEmail } from '@/lib/email';
 import { SINO_NOVO_FRANQUEADO_HTML } from '@/lib/sino-novo-franqueado-template';
 import { gerarRegistroFranquiaPdf } from '@/lib/registro-franquia-pdf';
 
@@ -62,23 +62,28 @@ export async function POST(req: Request) {
     const dataBR = formatDateBR(payload.data_ass_contrato);
     const area = safe(payload.area_atuacao);
 
-    // 1) Email (modo teste: SEMPRE para ingrid.hora@moni.casa)
-    // Importante: mesmo que o e-mail falhe, vamos seguir com o FLUXO 2 (timeline),
-    // para você conseguir validar a comunidade sem ficar bloqueado no Resend.
+    // 1) E-mail com PDF: REGISTRO_FRANQUIA_NOTIFY_EMAILS (Vercel) ou email_frank no registro
     try {
-      const pdfBytes = await gerarRegistroFranquiaPdf({
-        nomeFranqueado: nome || '-',
-        numeroFranquia: fk || '-',
-        dataAssinaturaContrato: dataBR || '-',
-      });
-      const emailRes = await sendRegistroFranquiaEmail({
-        to: 'ingrid.hora@moni.casa',
-        nomeFranqueado: nome || '-',
-        numeroFranquia: fk || '-',
-        dataAssinaturaContrato: dataBR || '-',
-        pdfBytes,
-      });
-      if (!emailRes.ok) console.error('sendRegistroFranquiaEmail (webhook)', emailRes.error);
+      const recipients = getRegistroFranquiaRecipients(payload.email_frank);
+      if (recipients.length === 0) {
+        console.warn(
+          'webhook novo-franqueado: sem destinatário para Registro de Franquia — defina REGISTRO_FRANQUIA_NOTIFY_EMAILS ou preencha email_frank.',
+        );
+      } else {
+        const pdfBytes = await gerarRegistroFranquiaPdf({
+          nomeFranqueado: nome || '-',
+          numeroFranquia: fk || '-',
+          dataAssinaturaContrato: dataBR || '-',
+        });
+        const emailRes = await sendRegistroFranquiaEmail({
+          to: recipients,
+          nomeFranqueado: nome || '-',
+          numeroFranquia: fk || '-',
+          dataAssinaturaContrato: dataBR || '-',
+          pdfBytes,
+        });
+        if (!emailRes.ok) console.error('sendRegistroFranquiaEmail (webhook)', emailRes.error);
+      }
     } catch (e) {
       console.error('webhook novo-franqueado: falha no envio de e-mail', e);
     }

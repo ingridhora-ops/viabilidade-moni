@@ -2,8 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Bar, Doughnut, Line } from 'react-chartjs-2';
+import type { ProcessoDashRow } from '@/lib/dashboard-novos-negocios/fetchData';
 import { createClient } from '@/lib/supabase/client';
 import { registerDashboardCharts } from '@/lib/charts/registerCharts';
+import { ProcessoDrilldownModal } from '@/components/dashboard/ProcessoDrilldownModal';
 import { PALETTE } from '@/lib/dashboard-novos-negocios/palette';
 import { fmtCompactMillions, fmtInt, fmtMM, fmtMoneyBRL, fmtPct } from '@/lib/dashboard-novos-negocios/format';
 import { fetchDashboardRawData } from '@/lib/dashboard-novos-negocios/fetchData';
@@ -38,15 +40,32 @@ const NN_BAR_PALETTE = [
   PALETTE.gold,
   PALETTE.gray,
 ];
-const CONTAB_COLORS = [PALETTE.charcoal, PALETTE.darkGreen, PALETTE.amber, PALETTE.petrol, PALETTE.gray];
-const CRED_COLORS = [PALETTE.gold, PALETTE.amber, PALETTE.darkGreen, PALETTE.gray];
+const CONTAB_COLORS = [PALETTE.charcoal, PALETTE.darkGreen, PALETTE.amber];
+const CRED_COLORS = [PALETTE.gold, PALETTE.amber];
+
+function cardsFilterCaption(f: DashboardStatusFilter): string {
+  switch (f) {
+    case 'ativos':
+      return 'cards ativos';
+    case 'cancelados':
+      return 'cancelados';
+    case 'removidos':
+      return 'excluídos';
+    case 'concluidos':
+      return 'concluídos';
+    case 'todos':
+      return 'todos os status';
+    default:
+      return 'cards';
+  }
+}
 
 export function DashboardNovosNegociosClient() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [rawData, setRawData] = useState<Awaited<ReturnType<typeof fetchDashboardRawData>> | null>(null);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
-  const [statusFilter, setStatusFilter] = useState<DashboardStatusFilter>('todos');
+  const [statusFilter, setStatusFilter] = useState<DashboardStatusFilter>('ativos');
   const [seriesOn, setSeriesOn] = useState({
     opcoes: true,
     comites: true,
@@ -57,6 +76,11 @@ export function DashboardNovosNegociosClient() {
   });
   const [expandCity, setExpandCity] = useState(false);
   const [expandRank, setExpandRank] = useState(false);
+  const [drilldown, setDrilldown] = useState<{
+    title: string;
+    subtitle?: string;
+    rows: ProcessoDashRow[];
+  } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -102,6 +126,7 @@ export function DashboardNovosNegociosClient() {
       labels: model.monthLabels,
       datasets: series.map((s) => ({
         label: s.label,
+        dashboardSeriesKey: s.key,
         data: keys.map((k) => model.monthly[s.key][k] ?? 0),
         borderColor: s.color,
         backgroundColor: `${s.color}33`,
@@ -114,17 +139,22 @@ export function DashboardNovosNegociosClient() {
 
   const waterfallFloating = useMemo(() => {
     if (!model) return null;
-    const [v1, v2, v3, v4, vT] = model.waterfall.vgvMm;
-    const cum = [0, v1, v1 + v2, v1 + v2 + v3];
-    const data = [
-      [0, v1] as [number, number],
-      [cum[1], cum[1] + v2],
-      [cum[2], cum[2] + v3],
-      [cum[3], cum[3] + v4],
-      [0, vT] as [number, number],
-    ];
-    const bg = [PALETTE.gold, PALETTE.amber, PALETTE.darkGreen, PALETTE.charcoal, PALETTE.petrol];
-    return { data, bg, labels: model.waterfall.labels };
+    const seg = model.waterfall.vgvMm;
+    let cum = 0;
+    const data: [number, number][] = seg.map((v) => {
+      const lo = cum;
+      cum += v;
+      return [lo, cum];
+    });
+    const totalMm = cum;
+    data.push([0, totalMm]);
+    const n = seg.length;
+    const bg = Array.from({ length: n + 1 }, (_, i) =>
+      i < n ? NN_BAR_PALETTE[i % NN_BAR_PALETTE.length] : PALETTE.petrol,
+    );
+    const borderWidth = Array.from({ length: n + 1 }, (_, i) => (i === n ? 2 : 0));
+    const labels = [...model.waterfall.labels, 'TOTAL'];
+    return { data, bg, labels, borderWidth };
   }, [model]);
 
   if (error) {
@@ -140,6 +170,13 @@ export function DashboardNovosNegociosClient() {
 
   return (
     <div>
+      <ProcessoDrilldownModal
+        open={Boolean(drilldown)}
+        title={drilldown?.title ?? ''}
+        subtitle={drilldown?.subtitle}
+        rows={drilldown?.rows ?? []}
+        onClose={() => setDrilldown(null)}
+      />
       <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-xl font-bold text-stone-900">Dashboard Novos Negócios</h1>
@@ -160,6 +197,8 @@ export function DashboardNovosNegociosClient() {
             >
               <option value="ativos">Ativos</option>
               <option value="cancelados">Cancelados</option>
+              <option value="removidos">Excluídos</option>
+              <option value="concluidos">Concluídos</option>
               <option value="todos">Todos</option>
             </select>
           </div>
@@ -226,8 +265,8 @@ export function DashboardNovosNegociosClient() {
             <>
               <p className="text-sm font-semibold text-stone-800">Kanban Novos Negócios — cards por etapa</p>
               <p className="text-xs text-stone-500">
-                {fmtInt(model.nnBar.counts.reduce((a, b) => a + b, 0))} cards ativos nas colunas do painel (mesma
-                lógica do Kanban; Crédito Terreno exclui Permuta).
+                {fmtInt(model.nnBar.counts.reduce((a, b) => a + b, 0))} · {cardsFilterCaption(statusFilter)} nas
+                colunas do painel (mesma lógica do Kanban; Crédito Terreno exclui Permuta).
               </p>
               <div
                 className="mt-3 w-full"
@@ -240,6 +279,15 @@ export function DashboardNovosNegociosClient() {
                     indexAxis: 'y',
                     responsive: true,
                     maintainAspectRatio: false,
+                    onClick: (_e, els) => {
+                      if (!model || !els.length) return;
+                      const i = els[0].index;
+                      setDrilldown({
+                        title: model.nnBar.labels[i] ?? `Etapa ${i + 1}`,
+                        subtitle: 'Kanban Novos Negócios',
+                        rows: model.drilldown.nnBar[i] ?? [],
+                      });
+                    },
                     plugins: {
                       legend: { display: false },
                       tooltip: {
@@ -294,16 +342,18 @@ export function DashboardNovosNegociosClient() {
               <Skeleton className="h-[200px]" />
             ) : (
               <>
-                <p className="text-sm font-semibold text-stone-800">Kanban Contabilidade — cards por fase</p>
-                <p className="text-xs text-stone-500">Total de {fmtInt(model.contab.total)} cards ativos</p>
+                <p className="text-sm font-semibold text-stone-800">Kanban Contabilidade — cards por coluna</p>
+                <p className="text-xs text-stone-500">
+                  Total de {fmtInt(model.contab.total)} · {cardsFilterCaption(statusFilter)}
+                </p>
                 <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-stone-600">
-                  {model.contab.order.map((k) => (
-                    <span key={k} className="flex items-center gap-1">
+                  {model.contab.labels.map((label, i) => (
+                    <span key={model.contab.keys[i]} className="flex items-center gap-1">
                       <span
                         className="h-2 w-2 rounded-sm"
-                        style={{ backgroundColor: CONTAB_COLORS[model.contab.order.indexOf(k)] }}
+                        style={{ backgroundColor: CONTAB_COLORS[i % CONTAB_COLORS.length] }}
                       />
-                      {model.contab.labels[k]}
+                      {label}
                     </span>
                   ))}
                 </div>
@@ -312,6 +362,15 @@ export function DashboardNovosNegociosClient() {
                     options={{
                       responsive: true,
                       maintainAspectRatio: false,
+                      onClick: (_e, els) => {
+                        if (!model || !els.length) return;
+                        const i = els[0].index;
+                        setDrilldown({
+                          title: model.contab.labels[i] ?? '',
+                          subtitle: 'Kanban Contabilidade',
+                          rows: model.drilldown.contab[i] ?? [],
+                        });
+                      },
                       plugins: {
                         legend: { display: false },
                         dataLabels: {
@@ -325,15 +384,15 @@ export function DashboardNovosNegociosClient() {
                       },
                     }}
                     data={{
-                      labels: model.contab.order.map((k) => model.contab.labels[k]),
+                      labels: model.contab.labels,
                       datasets: [
                         {
-                          data: model.contab.order.map((k) => model.contab.counts[k]),
+                          data: model.contab.counts,
                           backgroundColor: CONTAB_COLORS,
                           borderWidth: 0,
                           dataLabelFormat: (val: number, i: number) => {
                             const t = model.contab.total || 1;
-                            const c = model.contab.order.map((k) => model.contab.counts[k])[i];
+                            const c = model.contab.counts[i] ?? 0;
                             return `${fmtInt(c)} (${fmtPct((100 * c) / t, 0)})`;
                           },
                         } as never,
@@ -349,16 +408,19 @@ export function DashboardNovosNegociosClient() {
               <Skeleton className="h-[200px]" />
             ) : (
               <>
-                <p className="text-sm font-semibold text-stone-800">Kanban Crédito — cards por fase</p>
-                <p className="text-xs text-stone-500">Total de {fmtInt(model.cred.total)} cards ativos</p>
+                <p className="text-sm font-semibold text-stone-800">Kanban Crédito — cards por coluna</p>
+                <p className="text-xs text-stone-500">
+                  Mesmas colunas do painel (Crédito Terreno e Crédito Obra). Contagem por etapa do card; não usa
+                  subfases antigas do checklist. Total: {fmtInt(model.cred.total)} · {cardsFilterCaption(statusFilter)}
+                </p>
                 <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-stone-600">
-                  {model.cred.order.map((k) => (
-                    <span key={k} className="flex items-center gap-1">
+                  {model.cred.labels.map((label, i) => (
+                    <span key={model.cred.keys[i]} className="flex items-center gap-1">
                       <span
                         className="h-2 w-2 rounded-sm"
-                        style={{ backgroundColor: CRED_COLORS[model.cred.order.indexOf(k)] }}
+                        style={{ backgroundColor: CRED_COLORS[i % CRED_COLORS.length] }}
                       />
-                      {model.cred.labels[k]}
+                      {label}
                     </span>
                   ))}
                 </div>
@@ -367,6 +429,15 @@ export function DashboardNovosNegociosClient() {
                     options={{
                       responsive: true,
                       maintainAspectRatio: false,
+                      onClick: (_e, els) => {
+                        if (!model || !els.length) return;
+                        const i = els[0].index;
+                        setDrilldown({
+                          title: model.cred.labels[i] ?? '',
+                          subtitle: 'Kanban Crédito',
+                          rows: model.drilldown.cred[i] ?? [],
+                        });
+                      },
                       plugins: { legend: { display: false }, dataLabels: { isDark: false } },
                       scales: {
                         x: { ticks: { color: chartFontColor(), maxRotation: 35 } },
@@ -374,15 +445,15 @@ export function DashboardNovosNegociosClient() {
                       },
                     }}
                     data={{
-                      labels: model.cred.order.map((k) => model.cred.labels[k]),
+                      labels: model.cred.labels,
                       datasets: [
                         {
-                          data: model.cred.order.map((k) => model.cred.counts[k]),
+                          data: model.cred.counts,
                           backgroundColor: CRED_COLORS,
                           borderWidth: 0,
                           dataLabelFormat: (val: number, i: number) => {
                             const t = model.cred.total || 1;
-                            const c = model.cred.order.map((k) => model.cred.counts[k])[i];
+                            const c = model.cred.counts[i] ?? 0;
                             return `${fmtInt(c)} (${fmtPct((100 * c) / t, 0)})`;
                           },
                         } as never,
@@ -404,28 +475,63 @@ export function DashboardNovosNegociosClient() {
           <>
             <p className="text-sm font-semibold text-stone-800">VGV potencial acumulado por fase do pipeline · BRL MM</p>
             <p className="text-xs text-stone-500">
-              Casas = processos ativos por fatia. Total: {fmtInt(model.waterfall.counts[4])} · {fmtMM(model.waterfall.vgvMm[4])}
+              Colunas do kanban Portfolio + Operações (sem Step 1); barras acumulam VGV por etapa. Total:{' '}
+              {fmtInt(model.waterfall.totalN)} · {fmtMM(model.waterfall.totalVgvMm)}
             </p>
-            <div className="h-[280px]">
+            <div
+              style={{
+                height: `${Math.min(720, Math.max(280, (model.waterfall.labels.length + 1) * 22))}px`,
+              }}
+            >
               <Bar
                 options={{
                   responsive: true,
                   maintainAspectRatio: false,
+                  onClick: (_e, els) => {
+                    if (!model || !els.length) return;
+                    const i = els[0].index;
+                    const n = model.waterfall.counts.length;
+                    if (i < n) {
+                      setDrilldown({
+                        title: model.waterfall.labels[i] ?? '',
+                        subtitle: 'VGV por etapa do kanban',
+                        rows: model.drilldown.waterfall[i] ?? [],
+                      });
+                    } else {
+                      setDrilldown({
+                        title: 'TOTAL (VGV pipeline)',
+                        subtitle: 'Processos em alguma coluna do kanban (sem Step 1)',
+                        rows: model.drilldown.waterfallTotal,
+                      });
+                    }
+                  },
                   plugins: {
                     legend: { display: false },
                     tooltip: {
                       callbacks: {
                         label(ctx) {
                           const i = ctx.dataIndex;
-                          const c = model.waterfall.counts[i];
-                          const mm = model.waterfall.vgvMm[i];
-                          return `${fmtInt(c)} casas · ${fmtMM(mm)}`;
+                          const n = model.waterfall.counts.length;
+                          if (i < n) {
+                            const c = model.waterfall.counts[i] ?? 0;
+                            const mm = model.waterfall.vgvMm[i] ?? 0;
+                            return `${fmtInt(c)} casas · ${fmtMM(mm)}`;
+                          }
+                          return `Total: ${fmtInt(model.waterfall.totalN)} casas · ${fmtMM(model.waterfall.totalVgvMm)}`;
                         },
                       },
                     },
                   },
                   scales: {
-                    x: { ticks: { color: chartFontColor(), maxRotation: 25 } },
+                    x: {
+                      ticks: {
+                        color: chartFontColor(),
+                        maxRotation: 65,
+                        minRotation: 45,
+                        autoSkip: false,
+                        font: { size: 8 },
+                      },
+                    },
                     y: { beginAtZero: true, ticks: { color: chartFontColor() } },
                   },
                 }}
@@ -436,7 +542,7 @@ export function DashboardNovosNegociosClient() {
                       label: 'VGV MM',
                       data: waterfallFloating.data as unknown as [number, number][],
                       backgroundColor: waterfallFloating.bg,
-                      borderWidth: [0, 0, 0, 0, 2],
+                      borderWidth: waterfallFloating.borderWidth,
                       borderColor: 'rgba(201,169,110,0.4)',
                     },
                   ],
@@ -510,6 +616,23 @@ export function DashboardNovosNegociosClient() {
                   responsive: true,
                   maintainAspectRatio: false,
                   interaction: { mode: 'index', intersect: false },
+                  onClick: (_e, els) => {
+                    if (!model || !lineData || !els.length) return;
+                    const { index, datasetIndex } = els[0];
+                    const ds = lineData.datasets[datasetIndex] as {
+                      dashboardSeriesKey?: keyof typeof model.drilldown.monthly;
+                      label?: string;
+                    };
+                    const sk = ds.dashboardSeriesKey;
+                    if (!sk) return;
+                    const rows = model.drilldown.monthly[sk][index] ?? [];
+                    const monthLabel = model.monthLabels[index] ?? model.months[index];
+                    setDrilldown({
+                      title: `${monthLabel}`,
+                      subtitle: ds.label ?? sk,
+                      rows,
+                    });
+                  },
                   plugins: { legend: { display: false } },
                   scales: {
                     x: { ticks: { color: chartFontColor() } },
@@ -554,14 +677,25 @@ export function DashboardNovosNegociosClient() {
                       bg = PALETTE.lightAmber;
                       tc = '#fff';
                     }
+                    const meses = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
                     return (
-                      <div
+                      <button
+                        type="button"
                         key={`${ri}-${mi}`}
                         className="flex h-[26px] w-8 shrink-0 items-center justify-center rounded text-[11px] font-medium"
                         style={{ backgroundColor: bg, color: tc }}
+                        title="Clique para detalhes"
+                        onClick={() =>
+                          setDrilldown({
+                            title: `${row} — ${meses[mi] ?? mi + 1}`,
+                            subtitle:
+                              'Valor = média histórica de eventos nesse mês do ano (vários anos). Não há lista de processos por célula.',
+                            rows: [],
+                          })
+                        }
                       >
                         {v > 0 ? fmtInt(v) : ''}
-                      </div>
+                      </button>
                     );
                   })}
                 </div>
@@ -585,16 +719,27 @@ export function DashboardNovosNegociosClient() {
               <div className="mt-3 space-y-2">
                 {(
                   [
-                    ['Pré comitê', model.funnel.pre, PALETTE.amber],
-                    ['Aprovado comitê', model.funnel.aprov, PALETTE.darkGreen],
-                    ['Operação em andamento', model.funnel.op, PALETTE.petrol],
-                    ['Cancelado (Caiu)', model.funnel.caiu, PALETTE.red],
-                  ] as [string, number, string][]
-                ).map(([label, n, color]) => {
+                    ['Pré comitê', model.funnel.pre, PALETTE.amber, 'pre'] as const,
+                    ['Aprovado comitê', model.funnel.aprov, PALETTE.darkGreen, 'aprov'] as const,
+                    ['Operação em andamento', model.funnel.op, PALETTE.petrol, 'op'] as const,
+                    ['Cancelado (Caiu)', model.funnel.caiu, PALETTE.red, 'caiu'] as const,
+                  ] as const
+                ).map(([label, n, color, fk]) => {
                   const t = model.kpis.totalNegocios || 1;
                   const pct = (100 * Number(n)) / t;
                   return (
-                    <div key={String(label)} className="flex items-center justify-between gap-2 text-sm">
+                    <button
+                      type="button"
+                      key={String(label)}
+                      className="flex w-full items-center justify-between gap-2 rounded-md border border-transparent px-1 py-1 text-left text-sm hover:border-stone-200 hover:bg-stone-50"
+                      onClick={() =>
+                        setDrilldown({
+                          title: String(label),
+                          subtitle: 'Funil de novos negócios',
+                          rows: model.drilldown.funnel[fk],
+                        })
+                      }
+                    >
                       <span className="text-stone-700">{label}</span>
                       <span
                         className="rounded-full px-2 py-0.5 text-xs font-medium text-white"
@@ -602,7 +747,7 @@ export function DashboardNovosNegociosClient() {
                       >
                         {fmtInt(Number(n))} ({fmtPct(pct, 0)})
                       </span>
-                    </div>
+                    </button>
                   );
                 })}
               </div>
@@ -655,6 +800,17 @@ export function DashboardNovosNegociosClient() {
                 options={{
                   responsive: true,
                   maintainAspectRatio: false,
+                  onClick: (_e, els) => {
+                    if (!model || !els.length) return;
+                    const i = els[0].index;
+                    const row = model.drilldown.ticket[i];
+                    if (!row) return;
+                    setDrilldown({
+                      title: model.ticketRows[i]?.label ?? 'Projeto',
+                      subtitle: 'Ticket médio — processo',
+                      rows: [row],
+                    });
+                  },
                   plugins: { legend: { position: 'bottom' }, dataLabels: { isDark: false } },
                   scales: {
                     x: { ticks: { color: chartFontColor(), maxRotation: 45 } },
@@ -695,6 +851,13 @@ export function DashboardNovosNegociosClient() {
                   indexAxis: 'y',
                   responsive: true,
                   maintainAspectRatio: false,
+                  onClick: () => {
+                    setDrilldown({
+                      title: 'Tempo médio por fase',
+                      subtitle: 'Média de dias entre movimentações; não há lista fixa por processo.',
+                      rows: [],
+                    });
+                  },
                   plugins: { legend: { display: false }, dataLabels: { isDark: false } },
                   scales: {
                     x: { beginAtZero: true, ticks: { color: chartFontColor() } },
@@ -729,7 +892,17 @@ export function DashboardNovosNegociosClient() {
               <p className="text-sm font-semibold text-stone-800">Negócios por regional</p>
               <div className="mt-3 space-y-2">
                 {model.regionalBars.map((r) => (
-                  <div key={r.label}>
+                  <button
+                    type="button"
+                    key={r.label}
+                    className="block w-full text-left"
+                    onClick={() =>
+                      setDrilldown({
+                        title: `Regional: ${r.label}`,
+                        rows: model.drilldown.regional[r.label] ?? [],
+                      })
+                    }
+                  >
                     <div className="flex justify-between text-xs text-stone-600">
                       <span>{r.label}</span>
                       <span>
@@ -739,7 +912,7 @@ export function DashboardNovosNegociosClient() {
                     <div className="h-2 overflow-hidden rounded bg-stone-100">
                       <div className="h-full rounded" style={{ width: `${r.pct}%`, backgroundColor: PALETTE.petrol }} />
                     </div>
-                  </div>
+                  </button>
                 ))}
               </div>
             </div>
@@ -747,7 +920,17 @@ export function DashboardNovosNegociosClient() {
               <p className="text-sm font-semibold text-stone-800">Negócios por cidade (top 10)</p>
               <div className="mt-3 space-y-2">
                 {(expandCity ? model.cityBars : model.cityBars.slice(0, 10)).map((r) => (
-                  <div key={r.label}>
+                  <button
+                    type="button"
+                    key={r.label}
+                    className="block w-full text-left"
+                    onClick={() =>
+                      setDrilldown({
+                        title: `Cidade: ${r.label}`,
+                        rows: model.drilldown.city[r.label] ?? [],
+                      })
+                    }
+                  >
                     <div className="flex justify-between text-xs text-stone-600">
                       <span>{r.label}</span>
                       <span>
@@ -757,7 +940,7 @@ export function DashboardNovosNegociosClient() {
                     <div className="h-2 overflow-hidden rounded bg-stone-100">
                       <div className="h-full rounded" style={{ width: `${r.pct}%`, backgroundColor: PALETTE.charcoal }} />
                     </div>
-                  </div>
+                  </button>
                 ))}
               </div>
               {model.cityBars.length > 10 && (
@@ -836,10 +1019,18 @@ export function DashboardNovosNegociosClient() {
                 rows={(expandRank ? model.rankingN : model.rankingN.slice(0, 10)).map((r) => ({
                   label: r.nome.slice(0, 28),
                   v: r.n,
+                  userId: r.userId,
                 }))}
                 total={model.rankingN.length}
                 expanded={expandRank}
                 onToggle={() => setExpandRank((x) => !x)}
+                onRowClick={(row) =>
+                  setDrilldown({
+                    title: `Franqueado: ${row.label}`,
+                    subtitle: 'Negócios no universo filtrado',
+                    rows: model.drilldown.byUserId[row.userId ?? ''] ?? [],
+                  })
+                }
               />
               <RankBarCard
                 title="Por VGV total (R$ MM)"
@@ -848,10 +1039,18 @@ export function DashboardNovosNegociosClient() {
                 rows={(expandRank ? model.rankingVgv : model.rankingVgv.slice(0, 10)).map((r) => ({
                   label: r.nome.slice(0, 28),
                   v: Number((r.vgv / 1e6).toFixed(2)),
+                  userId: r.userId,
                 }))}
                 total={model.rankingVgv.length}
                 expanded={expandRank}
                 onToggle={() => setExpandRank((x) => !x)}
+                onRowClick={(row) =>
+                  setDrilldown({
+                    title: `Franqueado: ${row.label}`,
+                    subtitle: 'Negócios no universo filtrado',
+                    rows: model.drilldown.byUserId[row.userId ?? ''] ?? [],
+                  })
+                }
               />
             </>
           )}
@@ -866,11 +1065,19 @@ export function DashboardNovosNegociosClient() {
             rows={(expandRank ? model.rankingMedio : model.rankingMedio.slice(0, 10)).map((r) => ({
               label: r.nome.slice(0, 28),
               v: Number(r.med.toFixed(2)),
+              userId: r.userId,
             }))}
             total={model.rankingMedio.length}
             expanded={expandRank}
             onToggle={() => setExpandRank((x) => !x)}
             fullWidth
+            onRowClick={(row) =>
+              setDrilldown({
+                title: `Franqueado: ${row.label}`,
+                subtitle: 'Negócios ativos no universo filtrado',
+                rows: model.drilldown.byUserId[row.userId ?? ''] ?? [],
+              })
+            }
           />
         )}
       </div>
@@ -932,6 +1139,13 @@ export function DashboardNovosNegociosClient() {
               title="Motivos de cancelamento"
               entries={Array.from(model.motivoCancelCount.entries()).map(([k, n]) => ({ k, n }))}
               colors={[PALETTE.red, PALETTE.amber, PALETTE.gray, PALETTE.charcoal, PALETTE.darkGreen]}
+              onSliceClick={(entry) =>
+                setDrilldown({
+                  title: `Cancelamento: ${entry.k}`,
+                  subtitle: 'Processos cancelados com este motivo',
+                  rows: model.drilldown.motivoCancel[entry.k] ?? [],
+                })
+              }
             />
             <div className="rounded-lg border-[0.5px] border-stone-300 bg-white p-4 shadow-sm">
               <p className="text-sm font-semibold text-stone-800">Motivos de reprovação em comitê</p>
@@ -943,6 +1157,13 @@ export function DashboardNovosNegociosClient() {
                 <DonutInner
                   entries={Array.from(model.motivoReproCount.entries()).map(([k, n]) => ({ k, n }))}
                   colors={[PALETTE.red, PALETTE.amber, PALETTE.gray, PALETTE.charcoal, PALETTE.darkGreen]}
+                  onSliceClick={(entry) =>
+                    setDrilldown({
+                      title: `Reprovação em comitê: ${entry.k}`,
+                      subtitle: 'Processos com este motivo',
+                      rows: model.drilldown.motivoRepro[entry.k] ?? [],
+                    })
+                  }
                 />
               )}
             </div>
@@ -993,6 +1214,17 @@ export function DashboardNovosNegociosClient() {
                 indexAxis: 'y',
                 responsive: true,
                 maintainAspectRatio: false,
+                onClick: (_e, els) => {
+                  if (!model || !els.length) return;
+                  const i = els[0].index;
+                  const g = model.gargalos[i];
+                  if (!g) return;
+                  setDrilldown({
+                    title: g.key,
+                    subtitle: 'Processos ativos com este gargalo',
+                    rows: model.drilldown.gargalos[g.key] ?? [],
+                  });
+                },
                 plugins: { legend: { display: false }, dataLabels: { isDark: false } },
                 scales: {
                   x: { beginAtZero: true, ticks: { color: chartFontColor() } },
@@ -1049,15 +1281,17 @@ function RankBarCard({
   expanded,
   onToggle,
   fullWidth,
+  onRowClick,
 }: {
   title: string;
   color: string;
   formatValue: (v: number) => string;
-  rows: { label: string; v: number }[];
+  rows: { label: string; v: number; userId?: string }[];
   total: number;
   expanded: boolean;
   onToggle: () => void;
   fullWidth?: boolean;
+  onRowClick?: (row: { label: string; v: number; userId?: string }) => void;
 }) {
   const max = Math.max(1, ...rows.map((r) => r.v));
   const h = rows.length * 28 + 60;
@@ -1071,7 +1305,13 @@ function RankBarCard({
       <p className="text-sm font-semibold text-stone-800">{title}</p>
       <div className="mt-3 space-y-2">
         {rows.map((r) => (
-          <div key={r.label} className="flex items-center gap-2">
+          <button
+            type="button"
+            key={r.label}
+            className={`flex w-full items-center gap-2 rounded text-left ${onRowClick ? 'hover:bg-stone-50' : ''}`}
+            onClick={() => onRowClick?.(r)}
+            disabled={!onRowClick}
+          >
             <div className="w-[40%] truncate text-xs text-stone-700">{r.label}</div>
             <div className="relative h-6 flex-1 rounded bg-stone-100">
               <div
@@ -1080,7 +1320,7 @@ function RankBarCard({
               />
             </div>
             <div className="w-14 shrink-0 text-right text-xs text-stone-700">{formatValue(r.v)}</div>
-          </div>
+          </button>
         ))}
       </div>
       {total > 10 && (
@@ -1100,15 +1340,17 @@ function DonutCard({
   title,
   entries,
   colors,
+  onSliceClick,
 }: {
   title: string;
   entries: { k: string; n: number }[];
   colors: string[];
+  onSliceClick?: (entry: { k: string; n: number }, index: number) => void;
 }) {
   return (
     <div className="rounded-lg border-[0.5px] border-stone-300 bg-white p-4 shadow-sm">
       <p className="text-sm font-semibold text-stone-800">{title}</p>
-      <DonutInner entries={entries} colors={colors} />
+      <DonutInner entries={entries} colors={colors} onSliceClick={onSliceClick} />
     </div>
   );
 }
@@ -1117,10 +1359,12 @@ function DonutInner({
   entries,
   colors,
   total: totalIn,
+  onSliceClick,
 }: {
   entries: { k: string; n: number }[];
   colors: string[];
   total?: number;
+  onSliceClick?: (entry: { k: string; n: number }, index: number) => void;
 }) {
   const total = totalIn ?? (entries.reduce((s, e) => s + e.n, 0) || 1);
   if (entries.length === 0) {
@@ -1143,6 +1387,12 @@ function DonutInner({
           options={{
             cutout: '62%',
             plugins: { legend: { display: false } },
+            onClick: (_evt, elements) => {
+              if (!elements.length || !onSliceClick) return;
+              const i = elements[0].index;
+              const entry = entries[i];
+              if (entry) onSliceClick(entry, i);
+            },
           }}
         />
       </div>

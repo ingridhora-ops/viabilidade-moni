@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { Search } from 'lucide-react';
 import { PAINEL_COLUMNS, type PainelColumnKey } from './painelColumns';
@@ -28,16 +28,13 @@ function cardCumpreBusca(p: ProcessoCard, buscaNorm: string): boolean {
 type Props = {
   byEtapa: Record<PainelColumnKey, ProcessoCard[]>;
   initialOpenProcessId?: string;
+  kanbanReadOnly?: boolean;
 };
 
-export function PainelNovosNegociosClient({ byEtapa, initialOpenProcessId }: Props) {
+export function PainelNovosNegociosClient({ byEtapa, initialOpenProcessId, kanbanReadOnly = false }: Props) {
   const [busca, setBusca] = useState('');
   const [statusFilter, setStatusFilter] = useState<CardStatusFilter>('ativos');
   const [tagFilter, setTagFilter] = useState<CardTagFilter>('todas');
-
-  useEffect(() => {
-    if (initialOpenProcessId) setStatusFilter('todos');
-  }, [initialOpenProcessId]);
 
   const filteredByEtapa = useMemo(() => {
     const buscaNorm = normalizarParaBusca(busca);
@@ -79,6 +76,7 @@ export function PainelNovosNegociosClient({ byEtapa, initialOpenProcessId }: Pro
           <option value="ativos">Ativos</option>
           <option value="cancelados">Cancelados</option>
           <option value="removidos">Excluídos</option>
+          <option value="concluidos">Concluídos</option>
           <option value="todos">Todos</option>
         </select>
         <select
@@ -97,6 +95,7 @@ export function PainelNovosNegociosClient({ byEtapa, initialOpenProcessId }: Pro
         initialOpenProcessId={initialOpenProcessId}
         statusFilter={statusFilter}
         tagFilter={tagFilter}
+        kanbanReadOnly={kanbanReadOnly}
         step2HeaderActions={
           <NovoNegocioBatchUploader
             onCreated={() => {

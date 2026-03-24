@@ -98,6 +98,9 @@ export const PAINEL_COLUMNS: PainelColumnDef[] = [
   },
 ];
 
+/** Duas colunas do kanban Crédito no painel Novos Negócios — gráficos do dashboard usam só estas (via `etapa_painel`). */
+export const PAINEL_KANBAN_CREDITO_KEYS: readonly PainelColumnKey[] = ['credito_terreno', 'credito_obra'];
+
 const DEFAULT_ETAPA = 'step_1' as PainelColumnKey;
 
 /** Linha do fluxo: sequencial (uma fase) ou paralela (várias fases lado a lado com split/join). */

@@ -5,6 +5,7 @@ import type { ProcessoCard } from '@/app/steps-viabilidade/StepsKanbanColumn';
 import { PAINEL_COLUMNS, type PainelColumnKey } from '@/app/steps-viabilidade/painelColumns';
 import { PainelCreditoClient } from '@/app/painel-credito/PainelCreditoClient';
 import { buildChecklistAtrasoByCardId } from '@/lib/painel-checklist-atraso';
+import { sortProcessosPorOrdemColuna } from '@/lib/painel-coluna-ordem';
 
 export default async function PainelCreditoPage({
   searchParams,
@@ -20,7 +21,7 @@ export default async function PainelCreditoPage({
   const { data: rows } = await supabase
     .from('processo_step_one')
     .select(
-      'id, cidade, estado, status, etapa_atual, updated_at, user_id, step_atual, cancelado_em, removido_em, cancelado_motivo, removido_motivo, etapa_painel, trava_painel, tipo_aquisicao_terreno, numero_franquia, nome_franqueado, nome_condominio, quadra_lote, historico_base_id',
+      'id, cidade, estado, status, etapa_atual, updated_at, user_id, step_atual, cancelado_em, removido_em, cancelado_motivo, removido_motivo, etapa_painel, trava_painel, tipo_aquisicao_terreno, numero_franquia, nome_franqueado, nome_condominio, quadra_lote, historico_base_id, ordem_coluna_painel',
     )
     ;
 
@@ -95,12 +96,13 @@ export default async function PainelCreditoPage({
         isCancelado || isRemovido ? false : checklistAtrasoByCardId.get(r.id)?.hasAtrasado ?? false,
       has_atividade_atencao:
         isCancelado || isRemovido ? false : checklistAtrasoByCardId.get(r.id)?.hasAtencao ?? false,
+      ordem_coluna_painel: ((r as { ordem_coluna_painel?: number | null }).ordem_coluna_painel ?? 0) as number,
     };
   });
 
   const byEtapa = {
-    credito_terreno: processos.filter((p) => p.etapa_painel === 'credito_terreno'),
-    credito_obra: processos.filter((p) => p.etapa_painel === 'credito_obra'),
+    credito_terreno: sortProcessosPorOrdemColuna(processos.filter((p) => p.etapa_painel === 'credito_terreno')),
+    credito_obra: sortProcessosPorOrdemColuna(processos.filter((p) => p.etapa_painel === 'credito_obra')),
   };
 
   const titulo = PAINEL_COLUMNS.find((c) => c.key === 'credito_terreno')?.title ?? 'Crédito';

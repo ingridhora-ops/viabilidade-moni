@@ -10,9 +10,17 @@ type Props = {
   initialOpenProcessId?: string;
   statusFilter?: CardStatusFilter;
   tagFilter?: CardTagFilter;
+  kanbanReadOnly?: boolean;
 };
 
-export function PainelFlowBoard({ byEtapa, step2HeaderActions, initialOpenProcessId, statusFilter, tagFilter }: Props) {
+export function PainelFlowBoard({
+  byEtapa,
+  step2HeaderActions,
+  initialOpenProcessId,
+  statusFilter,
+  tagFilter,
+  kanbanReadOnly = false,
+}: Props) {
   return (
     <div className="flex items-stretch gap-4 overflow-x-auto pb-4 pt-2">
       {PAINEL_FLOW_ROWS.map((row, rowIndex) => {
@@ -36,6 +44,7 @@ export function PainelFlowBoard({ byEtapa, step2HeaderActions, initialOpenProces
                     initialOpenProcessId={initialOpenProcessId}
                     statusFilter={statusFilter}
                     tagFilter={tagFilter}
+                    kanbanReadOnly={kanbanReadOnly}
                   />
                 );
               })}
@@ -59,6 +68,7 @@ export function PainelFlowBoard({ byEtapa, step2HeaderActions, initialOpenProces
                   initialOpenProcessId={initialOpenProcessId}
                   statusFilter={statusFilter}
                   tagFilter={tagFilter}
+                  kanbanReadOnly={kanbanReadOnly}
                 />
               );
             })}

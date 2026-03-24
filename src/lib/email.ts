@@ -4,6 +4,7 @@
  */
 
 import type { AccessRole } from '@/lib/authz';
+import { getPublicAppUrl } from '@/lib/app-url';
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
 // Você pode sobrescrever no .env.local com RESEND_FROM=Casa Moní <onboarding@moni.casa>
@@ -23,20 +24,52 @@ function escapeHtml(s: string): string {
     .replace(/"/g, '&quot;');
 }
 
-/** Lista de e-mails para avisos de cadastro (separados por vírgula ou ponto-e-vírgula). */
+/** Lista de e-mails para avisos de cadastro (separados por vírgula ou ponto-e-vírgula). Sem fallback — configure SIGNUP_NOTIFY_ADMIN_EMAILS ou ADMIN_NOTIFY_EMAILS. */
 function parseAdminNotifyList(): string[] {
   const raw = process.env.SIGNUP_NOTIFY_ADMIN_EMAILS ?? process.env.ADMIN_NOTIFY_EMAILS ?? '';
-  const list = raw
+  return raw
     .split(/[,;]/)
     .map((s) => s.trim())
     .filter(Boolean);
-  if (list.length) return list;
-  return ['ingrid.hora@moni.casa'];
+}
+
+/**
+ * Destinatários do PDF "Registro de Franquia".
+ * 1) `REGISTRO_FRANQUIA_NOTIFY_EMAILS` (vários, separados por vírgula ou `;`) — se definido, usa só estes.
+ * 2) Senão, o e-mail do franqueado (`email_frank`) quando existir.
+ */
+export function getRegistroFranquiaRecipients(emailFrank?: string | null): string[] {
+  const raw = process.env.REGISTRO_FRANQUIA_NOTIFY_EMAILS?.trim() ?? '';
+  const fromEnv = raw
+    .split(/[,;]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (fromEnv.length) return fromEnv;
+  const frank = String(emailFrank ?? '')
+    .trim()
+    .toLowerCase();
+  if (frank.includes('@')) return [frank];
+  return [];
 }
 
 export type SendEmailResult =
   | { ok: true; resendEmailId?: string; skipped?: boolean }
   | { ok: false; error: string };
+
+/**
+ * Converte respostas cruas do Resend (ex. 403 em modo de testes) em texto útil para o admin.
+ */
+export function humanizeResendError(raw: string): string {
+  const t = raw.toLowerCase();
+  if (t.includes('only send testing emails') || t.includes('verify a domain')) {
+    return (
+      'Resend está em modo de testes: só é permitido enviar para o e-mail da conta Resend até verificares um domínio. ' +
+      'Em https://resend.com/domains adiciona e verifica moni.casa (DNS). Depois define RESEND_FROM na Vercel com um remetente desse domínio, ' +
+      'por exemplo: Casa Moní <onboarding@moni.casa> (não uses onboarding@resend.dev para produção).'
+    );
+  }
+  return raw;
+}
 
 /**
  * Envia e-mail via Resend. Em dev sem RESEND_API_KEY devolve ok + skipped (não quebra fluxos locais).
@@ -101,7 +134,7 @@ export async function sendJuridicoStatusEmail(
 }
 
 export async function sendRegistroFranquiaEmail(input: {
-  to: string;
+  to: string | string[];
   nomeFranqueado: string;
   numeroFranquia: string;
   dataAssinaturaContrato: string;
@@ -146,7 +179,7 @@ export async function sendSignupNotifications(opts: {
   accessRole: AccessRole;
 }): Promise<void> {
   const admins = parseAdminNotifyList();
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
+  const appUrl = getPublicAppUrl();
   const nome = opts.userName || '—';
   const dept = opts.departamento || '—';
 
@@ -183,12 +216,14 @@ export async function sendSignupNotifications(opts: {
       '</ul>' +
       `<p><a href="${appUrl.replace(/"/g, '%22')}/admin/usuarios">Gerenciar usuários</a></p>`;
 
-    await sendEmailViaResend({
-      to: admins,
-      subject: `[Moní] Novo cadastro pendente: ${opts.userEmail}`,
-      text: adminText,
-      html: adminHtml,
-    });
+    if (admins.length > 0) {
+      await sendEmailViaResend({
+        to: admins,
+        subject: `[Moní] Novo cadastro pendente: ${opts.userEmail}`,
+        text: adminText,
+        html: adminHtml,
+      });
+    }
     return;
   }
 

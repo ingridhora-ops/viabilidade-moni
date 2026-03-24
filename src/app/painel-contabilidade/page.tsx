@@ -5,6 +5,7 @@ import type { ProcessoCard } from '@/app/steps-viabilidade/StepsKanbanColumn';
 import type { PainelColumnKey } from '@/app/steps-viabilidade/painelColumns';
 import { PainelContabilidadeClient } from '@/app/painel-contabilidade/PainelContabilidadeClient';
 import { dayStartLocal, parsePrazoBrOrIso } from '@/lib/painel-checklist-atraso';
+import { sortProcessosPorOrdemColuna } from '@/lib/painel-coluna-ordem';
 
 export default async function PainelContabilidadePage({
   searchParams,
@@ -20,7 +21,7 @@ export default async function PainelContabilidadePage({
   const { data: rows } = await supabase
     .from('processo_step_one')
     .select(
-      'id, cidade, estado, status, etapa_atual, updated_at, user_id, step_atual, cancelado_em, removido_em, cancelado_motivo, removido_motivo, etapa_painel, trava_painel, tipo_aquisicao_terreno, numero_franquia, nome_franqueado, nome_condominio, quadra_lote, historico_base_id',
+      'id, cidade, estado, status, etapa_atual, updated_at, user_id, step_atual, cancelado_em, removido_em, cancelado_motivo, removido_motivo, etapa_painel, trava_painel, tipo_aquisicao_terreno, numero_franquia, nome_franqueado, nome_condominio, quadra_lote, historico_base_id, ordem_coluna_painel',
     );
 
   const rowsTodos = rows ?? [];
@@ -96,13 +97,18 @@ export default async function PainelContabilidadePage({
         isCancelado || isRemovido ? false : checklistFlags?.hasAtrasado ?? false,
       has_atividade_atencao:
         isCancelado || isRemovido ? false : checklistFlags?.hasAtencao ?? false,
+      ordem_coluna_painel: ((r as { ordem_coluna_painel?: number | null }).ordem_coluna_painel ?? 0) as number,
     };
   });
 
   const byEtapa = {
-    contabilidade_incorporadora: processos.filter((p) => p.etapa_painel === 'contabilidade_incorporadora'),
-    contabilidade_spe: processos.filter((p) => p.etapa_painel === 'contabilidade_spe'),
-    contabilidade_gestora: processos.filter((p) => p.etapa_painel === 'contabilidade_gestora'),
+    contabilidade_incorporadora: sortProcessosPorOrdemColuna(
+      processos.filter((p) => p.etapa_painel === 'contabilidade_incorporadora'),
+    ),
+    contabilidade_spe: sortProcessosPorOrdemColuna(processos.filter((p) => p.etapa_painel === 'contabilidade_spe')),
+    contabilidade_gestora: sortProcessosPorOrdemColuna(
+      processos.filter((p) => p.etapa_painel === 'contabilidade_gestora'),
+    ),
   };
 
   const cardParam = searchParams?.card;

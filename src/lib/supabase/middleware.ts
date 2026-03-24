@@ -2,6 +2,7 @@ import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 import { normalizeAccessRole } from '@/lib/authz';
 import { isAdminOnlyPath, isTeamAllowedPath } from '@/lib/access-matrix';
+import { allowPublicAccessRedeNovos } from '@/lib/public-rede-novos';
 
 export async function updateSession(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
@@ -57,8 +58,10 @@ export async function updateSession(request: NextRequest) {
     '/perfil',
     '/sirene',
   ];
+  const matchesProtected = protectedPrefixes.some((p) => pathname.startsWith(p));
+  const publicRedeNovos = allowPublicAccessRedeNovos(pathname);
   const needsAuth =
-    protectedPrefixes.some((p) => pathname.startsWith(p)) || isAdminOnlyPath(pathname);
+    (matchesProtected && !publicRedeNovos) || isAdminOnlyPath(pathname);
 
   if (needsAuth && !user) {
     const loginUrl = new URL('/login', request.url);

@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { inviteLinkIsLocalhost } from '@/lib/invite-link-utils';
 
 export function EnviarConviteForm() {
   const router = useRouter();
@@ -34,17 +35,34 @@ export function EnviarConviteForm() {
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setError(String(json?.error ?? 'Falha ao enviar convite.'));
+        const base = String(json?.error ?? 'Falha ao enviar convite.');
+        const link =
+          typeof json?.inviteLink === 'string' && json.inviteLink
+            ? ` O convite foi guardado; podes copiar o link: ${json.inviteLink}`
+            : '';
+        setError(base + link);
+        if (json?.inviteLink) router.refresh();
         return;
       }
+      const link = typeof json?.inviteLink === 'string' ? json.inviteLink : '';
+      const localLink = link && inviteLinkIsLocalhost(link);
+
       if (json?.emailSkipped) {
-        setMessage(
-          `${String(json?.warning ?? 'E-mail não enviado pelo Resend.')} Link para enviar manualmente: ${String(json?.inviteLink ?? '')}`,
-        );
+        let msg = `${String(json?.warning ?? 'E-mail não enviado pelo Resend.')} Link para enviar manualmente: ${link}`;
+        if (localLink) {
+          msg +=
+            ' ATENÇÃO: este link usa localhost — o convidado não abre fora do teu PC. Na Vercel define NEXT_PUBLIC_APP_URL com o URL público (ex. https://teu-projeto.vercel.app), faz deploy e volta a enviar.';
+        }
+        setMessage(msg);
       } else {
         let msg = `Convite processado para ${em}. O convidado deve receber o e-mail com o link.`;
         if (json?.resendEmailId) {
           msg += ` ID no Resend: ${json.resendEmailId} — em resend.com/emails podes confirmar entrega ou falhas.`;
+        }
+        if (localLink) {
+          msg += ` ATENÇÃO: o link no e-mail é localhost — não funciona para o convidado. Define NEXT_PUBLIC_APP_URL na Vercel com o domínio real, faz deploy e reenvia. Link gerado: ${link}`;
+        } else if (link) {
+          msg += ` Link: ${link}`;
         }
         setMessage(msg);
       }

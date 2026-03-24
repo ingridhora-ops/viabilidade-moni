@@ -1,10 +1,13 @@
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
+import { isPublicRedeNovosNegociosEnabled } from '@/lib/public-rede-novos';
 import { type ProcessoCard } from '@/app/steps-viabilidade/StepsKanbanColumn';
 import { PAINEL_COLUMNS, type PainelColumnKey } from '@/app/steps-viabilidade/painelColumns';
 import { PainelNovosNegociosClient } from '@/app/steps-viabilidade/PainelNovosNegociosClient';
 import { buildChecklistAtrasoByCardId } from '@/lib/painel-checklist-atraso';
+import { sortProcessosPorOrdemColuna } from '@/lib/painel-coluna-ordem';
+import { createAdminClient } from '@/lib/supabase/admin';
 
 export default async function PainelNovosNegociosPage({
   searchParams,
@@ -15,12 +18,22 @@ export default async function PainelNovosNegociosPage({
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) redirect('/login');
+  const publicMode = isPublicRedeNovosNegociosEnabled();
+  if (!user && !publicMode) redirect('/login');
 
-  const { data: rows } = await supabase
+  let db = supabase;
+  if (!user && publicMode) {
+    try {
+      db = createAdminClient();
+    } catch {
+      /* RLS com cliente anónimo: lista pode vir vazia */
+    }
+  }
+
+  const { data: rows } = await db
     .from('processo_step_one')
     .select(
-      'id, cidade, estado, status, etapa_atual, updated_at, user_id, step_atual, cancelado_em, removido_em, cancelado_motivo, removido_motivo, etapa_painel, trava_painel, tipo_aquisicao_terreno, numero_franquia, nome_franqueado, nome_condominio, quadra_lote, historico_base_id',
+      'id, cidade, estado, status, etapa_atual, updated_at, user_id, step_atual, cancelado_em, removido_em, cancelado_motivo, removido_motivo, etapa_painel, trava_painel, tipo_aquisicao_terreno, numero_franquia, nome_franqueado, nome_condominio, quadra_lote, historico_base_id, ordem_coluna_painel',
     )
   ;
 
@@ -29,7 +42,7 @@ export default async function PainelNovosNegociosPage({
   const processIds = rowsTodos.map((r) => r.user_id).filter(Boolean) as string[];
   let profiles: { id: string; full_name: string | null }[] = [];
   if (processIds.length > 0) {
-    const { data: prof } = await supabase
+    const { data: prof } = await db
       .from('profiles')
       .select('id, full_name')
       .in('id', [...new Set(processIds)]);
@@ -42,7 +55,7 @@ export default async function PainelNovosNegociosPage({
   );
   let checklistAtrasoByCardId = new Map<string, { hasAtrasado: boolean; hasAtencao: boolean }>();
   if (baseProcessoIds.length > 0) {
-    const { data: checklistRows } = await supabase
+    const { data: checklistRows } = await db
       .from('processo_card_checklist')
       .select('processo_id, etapa_painel, prazo, status, concluido')
       .in('processo_id', baseProcessoIds);
@@ -66,7 +79,7 @@ export default async function PainelNovosNegociosPage({
   }
   const baseIds = [...new Set(Array.from(baseIdByProcessoId.values()).filter(Boolean))];
   if (baseIds.length > 0) {
-    const { data: comiteRows } = await supabase
+    const { data: comiteRows } = await db
       .from('processo_card_comite')
       .select('processo_id, comite_resultado')
       .eq('comite_resultado', 'aprovado')
@@ -117,6 +130,7 @@ export default async function PainelNovosNegociosPage({
       has_atividade_atencao:
         isCancelado || isRemovido ? false : checklistAtrasoByCardId.get(r.id)?.hasAtencao ?? false,
       has_comite_aprovado: isCancelado || isRemovido ? false : processoIdsAprovadosEmComite.has(r.id),
+      ordem_coluna_painel: ((r as { ordem_coluna_painel?: number | null }).ordem_coluna_painel ?? 0) as number,
     };
   });
 
@@ -128,7 +142,7 @@ export default async function PainelNovosNegociosPage({
           (p) => (p.tipo_aquisicao_terreno ?? '') !== 'Permuta',
         );
       }
-      acc[col.key] = list;
+      acc[col.key] = sortProcessosPorOrdemColuna(list);
       return acc;
     },
     {} as Record<PainelColumnKey, ProcessoCard[]>,
@@ -163,7 +177,11 @@ export default async function PainelNovosNegociosPage({
             </p>
           </div>
         </div>
-        <PainelNovosNegociosClient byEtapa={byEtapa} initialOpenProcessId={initialOpenProcessId} />
+        <PainelNovosNegociosClient
+          byEtapa={byEtapa}
+          initialOpenProcessId={initialOpenProcessId}
+          kanbanReadOnly={false}
+        />
       </main>
     </div>
   );
