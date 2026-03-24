@@ -1,8 +1,10 @@
 'use server';
 
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { revalidatePath } from 'next/cache';
-import { getPainelDbForPublicEdit } from '@/lib/painel-public-edit';
+import { getPainelDbForPublicEdit, type PainelDbAuthOk } from '@/lib/painel-public-edit';
 import type { PainelColumnKey } from './painelColumns';
 import { PAINEL_COLUMNS } from './painelColumns';
 
@@ -938,6 +940,22 @@ function resolveLineageRowForBase(B: string, roots: any[], children: any[]): any
   return children.find((p: any) => String(p.historico_base_id) === B);
 }
 
+/** Leitura agregada (lista de todas as atividades): matriz precisa ver todos os processos como no dashboard. */
+async function resolveSupabaseParaAgregadoPainelTarefas(auth: PainelDbAuthOk): Promise<SupabaseClient> {
+  if (auth.isServiceRole) return auth.supabase;
+  if (!auth.user) return auth.supabase;
+  const { data: profile } = await auth.supabase.from('profiles').select('role').eq('id', auth.user.id).maybeSingle();
+  const rawRole = String((profile as { role?: string | null })?.role ?? '').trim().toLowerCase();
+  if (rawRole === 'admin' || rawRole === 'team' || rawRole === 'supervisor') {
+    try {
+      return createAdminClient();
+    } catch {
+      return auth.supabase;
+    }
+  }
+  return auth.supabase;
+}
+
 /** Painel de Tarefas: atividades do checklist do card (todas as etapas/cards do usuário). */
 export async function getAtividadesChecklistPainel(): Promise<
   | {
@@ -962,7 +980,7 @@ export async function getAtividadesChecklistPainel(): Promise<
 > {
   const auth = await getPainelDbForPublicEdit();
   if (!auth.ok) return { ok: false, error: auth.error };
-  const { supabase } = auth;
+  const supabase = await resolveSupabaseParaAgregadoPainelTarefas(auth);
 
   let checklistRows: any[] = [];
 
