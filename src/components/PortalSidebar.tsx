@@ -11,6 +11,8 @@ import { isLiveLimitedRelease } from '@/lib/release-scope';
 type PortalSidebarProps = {
   user: { id: string; email?: string; full_name?: string | null } | null;
   userRole: string;
+  /** Sem sessão: só macros Rede + Novos Negócios (subitens completos para edição pública). */
+  publicVisitor?: boolean;
 };
 
 function getInicialNome(fullName: string | null | undefined): string {
@@ -88,19 +90,20 @@ function isStepsActive(pathname: string) {
 function isAcoplamentoActive(pathname: string) {
   return pathname.startsWith('/acoplamento-pl');
 }
-export function PortalSidebar({ user, userRole }: PortalSidebarProps) {
+export function PortalSidebar({ user, userRole, publicVisitor = false }: PortalSidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const [resolvedRole, setResolvedRole] = useState(userRole);
   const isAdmin = isAdminRole(resolvedRole);
   const limitedRelease = isLiveLimitedRelease();
+  const showFullNovosNegociosNav = publicVisitor || isAdmin;
 
   useEffect(() => {
     setResolvedRole(userRole);
   }, [userRole]);
 
   useEffect(() => {
-    if (!user?.id) return;
+    if (publicVisitor || !user?.id) return;
     const supabase = createClient();
     void supabase
       .from('profiles')
@@ -112,7 +115,7 @@ export function PortalSidebar({ user, userRole }: PortalSidebarProps) {
           setResolvedRole(normalizeAccessRole(String(data.role)));
         }
       });
-  }, [user?.id]);
+  }, [user?.id, publicVisitor]);
   const [perfilOpen, setPerfilOpen] = useState(() => (pathname ?? '') === '/perfil');
   const [redeFranqueadosOpen, setRedeFranqueadosOpen] = useState(() => isRedeFranqueadosActive(pathname ?? ''));
   const [catalogoOpen, setCatalogoOpen] = useState(() => isCatalogoActive(pathname ?? ''));
@@ -136,8 +139,10 @@ export function PortalSidebar({ user, userRole }: PortalSidebarProps) {
   }, [pathname]);
 
   const isSirene = pathname.startsWith('/sirene');
-  const displayName = user?.full_name?.trim() || user?.email || 'Franqueado';
-  const inicial = getInicialNome(user?.full_name ?? null);
+  const displayName = publicVisitor
+    ? 'Visitante'
+    : user?.full_name?.trim() || user?.email || 'Franqueado';
+  const inicial = publicVisitor ? 'V' : getInicialNome(user?.full_name ?? null);
 
   const linkClassPrincipal = (active: boolean) =>
     `block w-full rounded-lg px-3 py-2 text-left text-sm font-semibold transition ${
@@ -279,7 +284,7 @@ export function PortalSidebar({ user, userRole }: PortalSidebarProps) {
           isPainelNovosNegociosActive(pathname ?? ''),
           painelNovosNegociosOpen,
           setPainelNovosNegociosOpen,
-          isAdmin
+          showFullNovosNegociosNav
             ? [
                 ...PAINEL_NOVOS_NEGOCIOS_SUBITENS,
                 ...PAINEL_NOVOS_NEGOCIOS_ADMIN_SUBITENS,
@@ -289,7 +294,7 @@ export function PortalSidebar({ user, userRole }: PortalSidebarProps) {
           (href) => pathname === href || (pathname?.startsWith(href + '/') ?? false),
         )}
 
-        {!limitedRelease &&
+        {!publicVisitor && !limitedRelease &&
           isAdmin &&
           renderMacro(
             'catalogo',
@@ -301,7 +306,7 @@ export function PortalSidebar({ user, userRole }: PortalSidebarProps) {
             (href) => pathname?.startsWith(href) ?? false,
           )}
 
-        {!limitedRelease &&
+        {!publicVisitor && !limitedRelease &&
           isAdmin &&
           renderMacro(
             'redeContatos',
@@ -313,7 +318,7 @@ export function PortalSidebar({ user, userRole }: PortalSidebarProps) {
             (href) => pathname === href,
           )}
 
-        {!limitedRelease &&
+        {!publicVisitor && !limitedRelease &&
           isAdmin &&
           renderMacro(
             'steps',
@@ -342,7 +347,7 @@ export function PortalSidebar({ user, userRole }: PortalSidebarProps) {
             (href) => (pathname === href || (href !== '/acoplamento-pl' && pathname?.startsWith(href))) ?? false,
           )}
 
-        {!limitedRelease && isAdmin && (
+        {!publicVisitor && !limitedRelease && isAdmin && (
           <Link
             href="/sirene"
             className={
@@ -356,108 +361,118 @@ export function PortalSidebar({ user, userRole }: PortalSidebarProps) {
         )}
       </nav>
 
-      {/* Bloco de perfil – verde quando está na Sirene */}
-      <div
-        className={
-          isSirene
-            ? 'space-y-1 border-t border-stone-800 bg-moni-primary/10 p-3'
-            : 'space-y-1 border-t border-stone-200 p-3'
-        }
-      >
+      {publicVisitor ? (
+        <div className="space-y-2 border-t border-stone-200 p-3 text-xs text-stone-600">
+          <p className="rounded-lg bg-stone-100 px-3 py-2 leading-snug">
+            Modo visitante — edição pública (Rede + Novos Negócios)
+          </p>
+          <Link href="/login" className="block font-medium text-moni-primary hover:underline">
+            Entrar com conta
+          </Link>
+        </div>
+      ) : (
         <div
           className={
             isSirene
-              ? 'flex w-full items-center gap-2 rounded-lg bg-moni-primary px-3 py-2'
-              : 'flex w-full items-center gap-2 rounded-lg px-3 py-2'
+              ? 'space-y-1 border-t border-stone-800 bg-moni-primary/10 p-3'
+              : 'space-y-1 border-t border-stone-200 p-3'
           }
         >
-          <span
+          <div
             className={
               isSirene
-                ? 'flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-xs font-semibold text-white'
-                : 'flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-moni-primary text-xs font-semibold text-white'
+                ? 'flex w-full items-center gap-2 rounded-lg bg-moni-primary px-3 py-2'
+                : 'flex w-full items-center gap-2 rounded-lg px-3 py-2'
             }
           >
-            {inicial}
-          </span>
-          <div className="min-w-0 flex-1">
             <span
               className={
                 isSirene
-                  ? 'block truncate text-sm font-semibold text-white'
-                  : 'block truncate text-sm font-semibold text-moni-primary'
+                  ? 'flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-xs font-semibold text-white'
+                  : 'flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-moni-primary text-xs font-semibold text-white'
               }
             >
-              {displayName}
+              {inicial}
             </span>
-            {user?.email && (
+            <div className="min-w-0 flex-1">
               <span
                 className={
                   isSirene
-                    ? 'mt-0.5 block truncate text-[10px] text-emerald-50/80'
-                    : 'mt-0.5 block truncate text-[10px] text-stone-300'
+                    ? 'block truncate text-sm font-semibold text-white'
+                    : 'block truncate text-sm font-semibold text-moni-primary'
                 }
               >
-                {user.email}
+                {displayName}
               </span>
+              {user?.email && (
+                <span
+                  className={
+                    isSirene
+                      ? 'mt-0.5 block truncate text-[10px] text-emerald-50/80'
+                      : 'mt-0.5 block truncate text-[10px] text-stone-300'
+                  }
+                >
+                  {user.email}
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div>
+            <button
+              type="button"
+              onClick={() => setPerfilOpen((o) => !o)}
+              className={`flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-xs font-medium transition ${
+                isSirene
+                  ? perfilOpen
+                    ? 'bg-emerald-500/20 text-emerald-50'
+                    : 'text-emerald-50/80 hover:bg-emerald-500/15 hover:text-emerald-50'
+                  : perfilOpen
+                    ? 'bg-moni-light text-moni-primary'
+                    : 'text-moni-primary hover:bg-moni-light/70 hover:text-moni-secondary'
+              }`}
+            >
+              <span className="flex items-center gap-1.5">
+                <User className="h-3.5 w-3.5" />
+                <span>Perfil</span>
+              </span>
+              {perfilOpen ? (
+                <ChevronDown className="h-3 w-3" />
+              ) : (
+                <ChevronRight className="h-3 w-3" />
+              )}
+            </button>
+            {perfilOpen && (
+              <div className="mt-1 space-y-0.5 pl-6 text-[11px]">
+                <div className={isSirene ? 'text-stone-400' : 'text-stone-500'}>
+                  Papel: {resolvedRole || 'franqueado'}
+                </div>
+                {isAdmin && (
+                  <Link
+                    href="/admin/usuarios"
+                    className={`mt-1 block text-left font-semibold ${isSirene ? 'text-emerald-200 hover:text-white' : 'text-moni-primary hover:text-moni-secondary'}`}
+                  >
+                    Gerenciar Usuários
+                  </Link>
+                )}
+                <Link
+                  href="/perfil"
+                  className={`mt-1 block text-left ${isSirene ? 'text-stone-200 hover:text-white' : 'text-moni-primary hover:text-moni-secondary'}`}
+                >
+                  Ver perfil e configurações
+                </Link>
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className={`mt-1 text-left ${isSirene ? 'text-red-400 hover:text-red-300' : 'text-red-600 hover:text-red-700'}`}
+                >
+                  Sair
+                </button>
+              </div>
             )}
           </div>
         </div>
-
-        <div>
-          <button
-            type="button"
-            onClick={() => setPerfilOpen((o) => !o)}
-            className={`flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-xs font-medium transition ${
-              isSirene
-                ? perfilOpen
-                  ? 'bg-emerald-500/20 text-emerald-50'
-                  : 'text-emerald-50/80 hover:bg-emerald-500/15 hover:text-emerald-50'
-                : perfilOpen
-                  ? 'bg-moni-light text-moni-primary'
-                  : 'text-moni-primary hover:bg-moni-light/70 hover:text-moni-secondary'
-            }`}
-          >
-            <span className="flex items-center gap-1.5">
-              <User className="h-3.5 w-3.5" />
-              <span>Perfil</span>
-            </span>
-            {perfilOpen ? (
-              <ChevronDown className="h-3 w-3" />
-            ) : (
-              <ChevronRight className="h-3 w-3" />
-            )}
-          </button>
-          {perfilOpen && (
-            <div className="mt-1 space-y-0.5 pl-6 text-[11px]">
-              <div className={isSirene ? 'text-stone-400' : 'text-stone-500'}>
-                Papel: {resolvedRole || 'franqueado'}
-              </div>
-              {isAdmin && (
-                <Link
-                  href="/admin/usuarios"
-                  className={`mt-1 block text-left font-semibold ${isSirene ? 'text-emerald-200 hover:text-white' : 'text-moni-primary hover:text-moni-secondary'}`}
-                >
-                  Gerenciar Usuários
-                </Link>
-              )}
-              <Link
-                href="/perfil"
-                className={`mt-1 block text-left ${isSirene ? 'text-stone-200 hover:text-white' : 'text-moni-primary hover:text-moni-secondary'}`}
-              >
-                Ver perfil e configurações
-              </Link>
-              <button
-                type="button"
-                onClick={handleLogout}
-                className={`mt-1 text-left ${isSirene ? 'text-red-400 hover:text-red-300' : 'text-red-600 hover:text-red-700'}`}
-              >
-                Sair
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
+      )}
     </div>
   );
 }

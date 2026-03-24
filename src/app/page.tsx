@@ -1,6 +1,5 @@
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
-import { redirect } from 'next/navigation';
 import { MoniFooter } from '@/components/MoniFooter';
 import { getStatusLabel } from '@/app/juridico/constants';
 import { normalizeAccessRole } from '@/lib/authz';
@@ -49,14 +48,13 @@ export default async function HomePage() {
     // Supabase não configurado ou indisponível
   }
 
-  /** Por defeito visitantes não veem Entrar/Cadastrar — vão direto ao painel. Opt-in: NEXT_PUBLIC_SHOW_HOME_LOGIN=true */
+  /** Opt-in: landing só com Entrar/Cadastrar (sem portal). Por defeito: portal Rede + Novos Negócios (sidebar no layout). */
   const showHomeLogin =
     (process.env.NEXT_PUBLIC_SHOW_HOME_LOGIN ?? '').trim().toLowerCase() === 'true';
-  if (!user && !showHomeLogin) {
-    redirect('/painel-novos-negocios');
-  }
 
-  if (!user) {
+  const showPublicPortalHome = !user && !showHomeLogin;
+
+  if (!user && showHomeLogin) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-b from-stone-50 via-white to-moni-light/20 px-4">
         <div className="flex flex-col items-center text-center">
@@ -80,7 +78,7 @@ export default async function HomePage() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-stone-50 via-white to-moni-light/20">
       <main className="mx-auto max-w-7xl px-4 py-8 sm:py-12">
-        {accessRole === 'team' ? (
+        {accessRole === 'team' || showPublicPortalHome ? (
           <>
             <section>
               <p className="text-sm font-medium uppercase tracking-wider text-moni-accent">
@@ -90,8 +88,9 @@ export default async function HomePage() {
                 Início
               </h1>
               <p className="mt-1 text-sm text-stone-600">
-                Acesse a rede de franqueados, a comunidade e o painel de novos negócios pelo menu à
-                esquerda.
+                {showPublicPortalHome
+                  ? 'Rede de Franqueados e Novos Negócios — use o menu à esquerda ou os atalhos abaixo.'
+                  : 'Acesse a rede de franqueados, a comunidade e o painel de novos negócios pelo menu à esquerda.'}
               </p>
             </section>
             <section className="mt-8 grid gap-4 sm:grid-cols-2">
@@ -134,6 +133,36 @@ export default async function HomePage() {
                 </span>
                 <h3 className="mt-2 font-semibold text-stone-900">Portfolio + Operações</h3>
                 <p className="mt-1 text-sm text-stone-600">Cards e etapas do processo.</p>
+              </Link>
+              <Link
+                href="/painel-novos-negocios/tarefas"
+                className="step-card block rounded-2xl border border-stone-200/80 bg-white p-5 shadow-sm"
+              >
+                <span className="text-xs font-semibold uppercase tracking-wider text-moni-accent">
+                  Novos Negócios
+                </span>
+                <h3 className="mt-2 font-semibold text-stone-900">Painel de Tarefas</h3>
+                <p className="mt-1 text-sm text-stone-600">Tarefas por etapa dos processos.</p>
+              </Link>
+              <Link
+                href="/painel-contabilidade"
+                className="step-card block rounded-2xl border border-stone-200/80 bg-white p-5 shadow-sm"
+              >
+                <span className="text-xs font-semibold uppercase tracking-wider text-moni-accent">
+                  Novos Negócios
+                </span>
+                <h3 className="mt-2 font-semibold text-stone-900">Contabilidade</h3>
+                <p className="mt-1 text-sm text-stone-600">Kanban Incorporadora, SPE e Gestora.</p>
+              </Link>
+              <Link
+                href="/painel-credito"
+                className="step-card block rounded-2xl border border-stone-200/80 bg-white p-5 shadow-sm"
+              >
+                <span className="text-xs font-semibold uppercase tracking-wider text-moni-accent">
+                  Novos Negócios
+                </span>
+                <h3 className="mt-2 font-semibold text-stone-900">Crédito</h3>
+                <p className="mt-1 text-sm text-stone-600">Kanban Terreno e Obra.</p>
               </Link>
             </section>
           </>

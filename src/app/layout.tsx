@@ -3,6 +3,7 @@ import './globals.css';
 import { createClient } from '@/lib/supabase/server';
 import { AppShell } from '@/components/AppShell';
 import { normalizeAccessRole } from '@/lib/authz';
+import { isAppFullyPublic } from '@/lib/public-rede-novos';
 
 /** Sessão + papel vêm de cookies; sem isto o shell pode servir HTML cacheado com papel errado. */
 export const dynamic = 'force-dynamic';
@@ -37,10 +38,12 @@ export default async function RootLayout({
     // ignore
   }
 
+  const showPublicPortalNav = !user && isAppFullyPublic();
+
   return (
     <html lang="pt-BR">
       <body className="font-sans antialiased">
-        <AppShell user={user} userRole={userRole}>
+        <AppShell user={user} userRole={userRole} showPublicPortalNav={showPublicPortalNav}>
           {children}
         </AppShell>
       </body>
