@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
+import { isAppFullyPublic } from '@/lib/public-rede-novos';
 import { getMonitorTopicosPorTime } from '../actions';
 import { MonitorFiltroTipo } from './MonitorFiltroTipo';
 
@@ -21,7 +22,16 @@ export default async function SireneMonitorPage({
   const filtroTipo =
     params.tipo === 'padrao' || params.tipo === 'hdm' ? params.tipo : undefined;
   const result = await getMonitorTopicosPorTime(filtroTipo ?? 'todos');
-  if (!result.ok) redirect('/login');
+  if (!result.ok) {
+    if (!isAppFullyPublic()) redirect('/login');
+    return (
+      <main className="mx-auto max-w-7xl px-4 py-8">
+        <p className="text-sm text-stone-600">
+          {(result as { error?: string }).error ?? 'Não foi possível carregar o monitor.'}
+        </p>
+      </main>
+    );
+  }
   if (!result.isBombeiro) redirect('/sirene');
 
   const { porTime } = result;

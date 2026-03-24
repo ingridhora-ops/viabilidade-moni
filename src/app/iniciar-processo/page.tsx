@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
+import { isAppFullyPublic } from '@/lib/public-rede-novos';
 import { FormularioInicioProcesso } from './FormularioInicioProcesso';
 
 export default async function IniciarProcessoPage() {
@@ -9,7 +10,7 @@ export default async function IniciarProcessoPage() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) {
+  if (!user && !isAppFullyPublic()) {
     redirect(`/login?next=${encodeURIComponent('/iniciar-processo')}`);
   }
 

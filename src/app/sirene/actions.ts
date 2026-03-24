@@ -1,6 +1,8 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
+import { isAppFullyPublic } from '@/lib/public-rede-novos';
 import { revalidatePath } from 'next/cache';
 import type { Chamado, HdmTime } from '@/types/sirene';
 import { canActAsBombeiro, type SireneUserContext } from '@/lib/sirene';
@@ -37,7 +39,12 @@ export async function getSireneLayoutContext(): Promise<
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return { ok: false, error: 'Faça login.' };
+  if (!user) {
+    if (isAppFullyPublic()) {
+      return { ok: true, userName: 'Visitante', isBombeiro: false };
+    }
+    return { ok: false, error: 'Faça login.' };
+  }
   const { data: profile } = await supabase
     .from('profiles')
     .select('full_name')
@@ -1232,10 +1239,23 @@ export async function getDashboardData(
   | { ok: false; error: string }
 > {
   const supabase = await createClient();
-  const me = await getSireneUserContext(supabase);
+  let me = await getSireneUserContext(supabase);
+  let queryClient: typeof supabase = supabase;
+  if (!me && isAppFullyPublic()) {
+    try {
+      queryClient = createAdminClient() as typeof supabase;
+      me = {
+        userId: '00000000-0000-0000-0000-000000000000',
+        userName: 'Visitante',
+        ctx: { papel: null, time: null },
+      };
+    } catch {
+      /* sem service role */
+    }
+  }
   if (!me) return { ok: false, error: 'Faça login.' };
 
-  let query = supabase
+  let query = queryClient
     .from('sirene_chamados')
     .select(
       'id, numero, status, trava, te_trata, data_abertura, data_inicio_atendimento, resolucao_suficiente, incendio, time_abertura, tipo, updated_at',
@@ -1301,7 +1321,7 @@ export async function getDashboardData(
     status: string;
   }> = [];
 
-  const { data: topicos } = await supabase
+  const { data: topicos } = await queryClient
     .from('sirene_topicos')
     .select('id, chamado_id, descricao, status, time_responsavel')
     .eq('responsavel_id', me.userId);
@@ -1309,7 +1329,7 @@ export async function getDashboardData(
   const chamadoIds = [...new Set((topicos ?? []).map((t) => t.chamado_id))];
   const chamadosById = new Map<number, { numero: number; incendio: string | null }>();
   if (chamadoIds.length > 0) {
-    const { data: chamadosList } = await supabase
+    const { data: chamadosList } = await queryClient
       .from('sirene_chamados')
       .select('id, numero, incendio')
       .in('id', chamadoIds);
@@ -1332,11 +1352,11 @@ export async function getDashboardData(
   }
 
   if (me.ctx.papel === 'bombeiro') {
-    const { data: chamadosEmAndamento } = await supabase
+    const { data: chamadosEmAndamento } = await queryClient
       .from('sirene_chamados')
       .select('id, numero, incendio')
       .eq('status', 'em_andamento');
-    const { data: todosTopicos } = await supabase
+    const { data: todosTopicos } = await queryClient
       .from('sirene_topicos')
       .select('chamado_id, status, aprovado_bombeiro');
     const porChamado = new Map<number, { concluidos: number; aprovados: number }>();

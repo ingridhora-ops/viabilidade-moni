@@ -1,6 +1,8 @@
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
+import { createAdminClient } from '@/lib/supabase/admin';
+import { isAppFullyPublic } from '@/lib/public-rede-novos';
 import Step1Form from './Step1Form';
 
 export default async function IniciarStepOnePage() {
@@ -8,13 +10,26 @@ export default async function IniciarStepOnePage() {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) redirect('/login');
 
-  const { data: processos } = await supabase
+  if (!user && !isAppFullyPublic()) redirect('/login');
+
+  let db = supabase;
+  if (!user && isAppFullyPublic()) {
+    try {
+      db = createAdminClient();
+    } catch {
+      /* RLS */
+    }
+  }
+
+  let processosQuery = db
     .from('processo_step_one')
     .select('id, cidade, estado, status, etapa_atual, updated_at')
-    .eq('user_id', user.id)
     .order('updated_at', { ascending: false });
+  if (user) {
+    processosQuery = processosQuery.eq('user_id', user.id);
+  }
+  const { data: processos } = await processosQuery;
 
   const emAndamento = (processos ?? []).filter(
     (p) => p.status === 'em_andamento' || p.status === 'rascunho',

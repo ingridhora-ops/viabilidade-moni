@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
+import { isAppFullyPublic } from '@/lib/public-rede-novos';
 import { FormularioInicioProcesso } from '@/app/iniciar-processo/FormularioInicioProcesso';
 
 export default async function NovoStep1Page() {
@@ -9,15 +10,13 @@ export default async function NovoStep1Page() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) {
+  if (!user && !isAppFullyPublic()) {
     redirect(`/login?next=${encodeURIComponent('/painel-novos-negocios/novo-step-1')}`);
   }
 
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('full_name')
-    .eq('id', user.id)
-    .single();
+  const { data: profile } = user
+    ? await supabase.from('profiles').select('full_name').eq('id', user.id).single()
+    : { data: null as { full_name: string | null } | null };
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-stone-50 to-white">
@@ -37,7 +36,7 @@ export default async function NovoStep1Page() {
           destinoEtapa="step_1"
           titulo="Novo Step 1"
           descricao="Preencha o formulário. O novo card aparecerá na fase Step 1 (Mapeamento da Região). Cards finalizados no Step 1 permanecem nesta fase com destaque."
-          user={{ full_name: profile?.full_name ?? null, email: user.email ?? null }}
+          user={{ full_name: profile?.full_name ?? null, email: user?.email ?? null }}
         />
       </main>
     </div>

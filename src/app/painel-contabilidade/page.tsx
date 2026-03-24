@@ -1,3 +1,4 @@
+import { guardLoginRequired } from '@/lib/auth-guard';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
@@ -16,7 +17,7 @@ export default async function PainelContabilidadePage({
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) redirect('/login');
+  guardLoginRequired(user);
 
   const { data: rows } = await supabase
     .from('processo_step_one')

@@ -1,9 +1,9 @@
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
+import { redirect } from 'next/navigation';
 import { MoniFooter } from '@/components/MoniFooter';
 import { getStatusLabel } from '@/app/juridico/constants';
 import { normalizeAccessRole } from '@/lib/authz';
-
 export default async function HomePage() {
   let user: { id: string; email?: string } | null = null;
   let accessRole = 'pending' as ReturnType<typeof normalizeAccessRole>;
@@ -47,6 +47,13 @@ export default async function HomePage() {
     }
   } catch {
     // Supabase não configurado ou indisponível
+  }
+
+  /** Por defeito visitantes não veem Entrar/Cadastrar — vão direto ao painel. Opt-in: NEXT_PUBLIC_SHOW_HOME_LOGIN=true */
+  const showHomeLogin =
+    (process.env.NEXT_PUBLIC_SHOW_HOME_LOGIN ?? '').trim().toLowerCase() === 'true';
+  if (!user && !showHomeLogin) {
+    redirect('/painel-novos-negocios');
   }
 
   if (!user) {

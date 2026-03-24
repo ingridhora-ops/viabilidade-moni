@@ -13,6 +13,16 @@ export function isPublicRedeNovosNegociosEnabled(): boolean {
   return true;
 }
 
+/**
+ * App aberta sem login/cadastro (visitantes entram direto; só /admin exige sessão no middleware).
+ * Padrão: **público**. Para exigir login em todo o site: `NEXT_PUBLIC_APP_PUBLIC=false` na Vercel.
+ */
+export function isAppFullyPublic(): boolean {
+  const v = (process.env.NEXT_PUBLIC_APP_PUBLIC ?? '').trim().toLowerCase();
+  if (v === '0' || v === 'false' || v === 'no' || v === 'off') return false;
+  return true;
+}
+
 const PUBLIC_REDE_NOVOS_PREFIXES: readonly string[] = [
   '/rede-franqueados',
   '/comunidade',

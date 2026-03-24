@@ -1,3 +1,4 @@
+import { guardLoginRequired } from '@/lib/auth-guard';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
@@ -11,7 +12,7 @@ export default async function AdminUsuariosPage() {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) redirect('/login');
+  guardLoginRequired(user);
 
   const { data: me } = await supabase.from('profiles').select('role').eq('id', user.id).maybeSingle();
   if (normalizeAccessRole((me as { role?: string } | null)?.role) !== 'admin') {

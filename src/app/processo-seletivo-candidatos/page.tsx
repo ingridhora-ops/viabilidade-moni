@@ -1,3 +1,4 @@
+import { guardLoginRequired } from '@/lib/auth-guard';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
@@ -7,7 +8,7 @@ export default async function ProcessoSeletivoCandidatosPage() {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) redirect('/login');
+  guardLoginRequired(user);
 
   const { data: profile } = await supabase
     .from('profiles')

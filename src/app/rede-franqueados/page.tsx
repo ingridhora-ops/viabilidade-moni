@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import { isAdminRole } from '@/lib/authz';
-import { isPublicRedeNovosNegociosEnabled } from '@/lib/public-rede-novos';
+import { isAppFullyPublic, isPublicRedeNovosNegociosEnabled } from '@/lib/public-rede-novos';
 import { fetchRedeFranqueadosRows } from '@/lib/rede-franqueados';
 import { TabelaRedeFranqueadosEditavel } from '@/components/TabelaRedeFranqueadosEditavel';
 import { contarLinhasSemCard } from './actions';
@@ -19,10 +19,9 @@ export default async function RedeFranqueadosPage() {
     data: { user },
   } = await supabase.auth.getUser();
   const publicAccess = isPublicRedeNovosNegociosEnabled();
-  if (!user && !publicAccess) redirect('/login');
 
   let db = supabase;
-  if (!user && publicAccess) {
+  if (!user && (publicAccess || isAppFullyPublic())) {
     try {
       db = createAdminClient();
     } catch {
@@ -34,7 +33,8 @@ export default async function RedeFranqueadosPage() {
     ? await supabase.from('profiles').select('role').eq('id', user.id).single()
     : { data: null };
   const role = (profile?.role as string) ?? 'frank';
-  const canManage = (Boolean(user) && isAdminRole(role)) || publicAccess;
+  const canManage =
+    (Boolean(user) && isAdminRole(role)) || publicAccess || isAppFullyPublic();
 
   const [rows, countResult] = await Promise.all([
     fetchRedeFranqueadosRows(db),

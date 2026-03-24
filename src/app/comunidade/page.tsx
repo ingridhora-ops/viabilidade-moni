@@ -1,7 +1,5 @@
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
-import { redirect } from 'next/navigation';
-import { isPublicRedeNovosNegociosEnabled } from '@/lib/public-rede-novos';
 import { fetchRedeFranqueados } from '@/lib/rede-franqueados';
 import { TabelaRedeFranqueados } from '@/components/TabelaRedeFranqueados';
 import { TimelineComunidade } from './TimelineComunidade';
@@ -11,7 +9,6 @@ export default async function ComunidadePage() {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user && !isPublicRedeNovosNegociosEnabled()) redirect('/login');
 
   const data = await fetchRedeFranqueados(supabase);
 

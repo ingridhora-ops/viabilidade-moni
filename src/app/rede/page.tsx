@@ -1,3 +1,4 @@
+import { guardLoginRequired } from '@/lib/auth-guard';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
@@ -8,7 +9,7 @@ export default async function RedePage() {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) redirect('/login');
+  guardLoginRequired(user);
 
   const { data: contatos } = await supabase
     .from('rede_contatos')

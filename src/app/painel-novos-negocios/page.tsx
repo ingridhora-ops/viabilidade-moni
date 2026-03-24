@@ -1,7 +1,6 @@
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
-import { redirect } from 'next/navigation';
-import { isPublicRedeNovosNegociosEnabled } from '@/lib/public-rede-novos';
+import { isAppFullyPublic, isPublicRedeNovosNegociosEnabled } from '@/lib/public-rede-novos';
 import { type ProcessoCard } from '@/app/steps-viabilidade/StepsKanbanColumn';
 import { PAINEL_COLUMNS, type PainelColumnKey } from '@/app/steps-viabilidade/painelColumns';
 import { PainelNovosNegociosClient } from '@/app/steps-viabilidade/PainelNovosNegociosClient';
@@ -19,10 +18,9 @@ export default async function PainelNovosNegociosPage({
     data: { user },
   } = await supabase.auth.getUser();
   const publicMode = isPublicRedeNovosNegociosEnabled();
-  if (!user && !publicMode) redirect('/login');
 
   let db = supabase;
-  if (!user && publicMode) {
+  if (!user && (publicMode || isAppFullyPublic())) {
     try {
       db = createAdminClient();
     } catch {
